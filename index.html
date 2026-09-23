@@ -327,6 +327,13 @@ body{background:var(--page)}
 .type-dot{flex:none;width:12px;height:12px;border-radius:50%;background:#83DFF5}
 .type-dot.strength{background:#111;box-shadow:inset 0 0 0 3px #83DFF5}
 .type-dot.health{background:#00728D}
+.type-dot.endurance{background:#fff;box-shadow:inset 0 0 0 3px #00728D}
+.bp-note{border-radius:var(--radius);padding:.9rem 1.2rem;margin:0 0 1.25rem;background:var(--surface);border-left:5px solid var(--good);box-shadow:var(--card-shadow)}
+.bp-note.warn{border-left-color:var(--warn)} .bp-note.bad{border-left-color:#B23A2A}
+.trunk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-bottom:1.5rem}
+.trunk-row{display:flex;align-items:baseline;gap:.6rem;margin:.8rem 0}
+.trunk-clock{font-size:2.6rem;color:var(--tide);font-variant-numeric:tabular-nums}
+.trunk-row .btn{margin-left:auto}
 .edit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.9rem}
 .field select,.edit-card select{border:2px solid var(--line);background:var(--surface);color:var(--ink);border-radius:var(--radius);min-height:52px;padding:0 .7rem}
 .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:.75rem}
@@ -1377,7 +1384,8 @@ function previousSession(c, s){
    Bluetooth format (decoded in clinic): service 0xffe0, notify 0xffe1,
    force = signed 16-bit big-endian in tenths of a kg. Dual dyno: left at bytes 0-1, right at 2-3.
    ============================================================ */
-const stype = s => s?.type === 'strength' || s?.type === 'health' ? s.type : 'movement';
+const stype = s => ['strength', 'health', 'endurance'].includes(s?.type) ? s.type : 'movement';
+const TYPE_LABEL = {health:'Health', movement:'Movement', strength:'Strength', endurance:'Endurance'};
 const LB = 0.4536;
 /* Grip targets: peak median for adults to 39 years (Dodds et al. 2014, 12 British population studies),
    ESSA Outcome Measures booklet for 60+ (Desrosiers et al. 1995, Jamar, kg – the booklet table is
@@ -1569,16 +1577,16 @@ const STRENGTH = [
   sTest('s_sh_er', 'Shoulder external rotation', 'anchor', 'anchor', 'both', ['Lying on the back, arm out to the side at 45°, elbow bent to 90° with the forearm pointing at the ceiling, strap just above the wrist.', 'Rotate the forearm outwards as hard as possible for 3–5 seconds.', 'Test one arm at a time or both together – each side is recorded separately.'], {ref:'sh_er'})
 ];
 const S_GROUPS = [{id:'grip', label:'Hand Grip Dyno'}, {id:'pushpull', label:'Push/pull Dyno'}, {id:'anchor', label:'Dual Dyno'}];
-const testsFor = s => ({strength:STRENGTH, health:HEALTH, movement:TESTS})[stype(s)];
-const groupsFor = s => ({strength:S_GROUPS, health:H_GROUPS, movement:GROUPS})[stype(s)];
-const anyTest = id => [...TESTS, ...STRENGTH, ...HEALTH].find(t => t.id === id);
+const testsFor = s => ({strength:STRENGTH, health:HEALTH, movement:TESTS, endurance:ENDURANCE})[stype(s)];
+const groupsFor = s => ({strength:S_GROUPS, health:H_GROUPS, movement:GROUPS, endurance:E_GROUPS})[stype(s)];
+const anyTest = id => [...TESTS, ...STRENGTH, ...HEALTH, ...ENDURANCE].find(t => t.id === id);
 function plannedTests(s){
   const all = testsFor(s);
   if (!Array.isArray(s.plan)) return all;
   return all.filter(t => s.plan.includes(t.id) || s.results[t.id]);
 }
-const screenNoun = s => ({strength:'Strength screen', health:'Health screen', movement:'Movement screen'})[stype(s)];
-const itemNoun = (s, n) => ({strength:'test', health:'measure', movement:'movement'})[stype(s)] + (n === 1 ? '' : 's');
+const screenNoun = s => TYPE_LABEL[stype(s)] + ' screen';
+const itemNoun = (s, n) => ({strength:'test', health:'measure', movement:'movement', endurance:'test'})[stype(s)] + (n === 1 ? '' : 's');
 /* Headline number for a strength test with no percentage (e.g. mid-thigh pull) */
 function strengthKg(t, r){ if (!r || r.unable) return null; const b = sidesBest(t, r); return b.one ?? null; }
 
@@ -1704,7 +1712,7 @@ function renderGroup(gid, editing = false){
         <span class="avatar lg" aria-hidden="true">${esc(initials(g.name))}</span>
         <div><h1>${esc(g.name)}</h1><p class="lede">${list.length} client${list.length === 1 ? '' : 's'} <button class="link on-dark" id="editG">Rename</button></p></div>
       </div>
-      <div class="latest-pair">${TYPE_ORDER.map(t => `<div class="latest">${ringHTML(a[t] ? a[t].pct : null, 96, 9)}<div><p class="eyebrow">${({strength:'Strength', health:'Health', movement:'Movement'})[t]}</p><p class="lede">${a[t] ? `Average of ${a[t].n}` : 'No screens yet'}</p></div></div>`).join('')}</div>
+      <div class="latest-pair">${TYPE_ORDER.map(t => `<div class="latest">${ringHTML(a[t] ? a[t].pct : null, 96, 9)}<div><p class="eyebrow">${TYPE_LABEL[t]}</p><p class="lede">${a[t] ? `Average of ${a[t].n}` : 'No screens yet'}</p></div></div>`).join('')}</div>
       <div class="hero-actions"><button class="btn sky" id="addClient">Add a client here</button><button class="btn quiet" id="csv">Export summary (CSV)</button></div>
     </section>
     ${editing ? `<section class="card"><div class="card-head"><h2>Group name</h2></div>
@@ -1717,7 +1725,7 @@ function renderGroup(gid, editing = false){
       ${list.length ? `<ul class="clist">${list.map(c => `<li><button class="crow" data-id="${c.id}">
           <span class="avatar" aria-hidden="true">${esc(initials(c.name))}</span>
           <span class="crow-main"><span class="row-title">${esc(c.name)}</span><br><span class="row-meta">Age ${c.age}. ${esc(lastSummary(c))}</span></span>
-          ${ringHTML(latestPct(c, 'movement') ?? latestPct(c, 'strength') ?? latestPct(c, 'health'), 52, 6)}
+          ${ringHTML(latestPct(c, 'movement') ?? latestPct(c, 'strength') ?? latestPct(c, 'health') ?? latestPct(c, 'endurance'), 52, 6)}
         </button></li>`).join('')}</ul>`
         : '<p class="empty">No clients in this group yet. Add one above, or change a client’s group in their details.</p>'}
     </section>
@@ -1741,7 +1749,7 @@ function renderGroup(gid, editing = false){
 }
 
 function exportGroupCSV(g, list){
-  const head = ['Client','Age','Gender','Group','Health %','Health date','Movement %','Movement date','Strength %','Strength date'];
+  const head = ['Client','Age','Gender','Group', ...TYPE_ORDER.flatMap(t => [`${TYPE_LABEL[t]} %`, `${TYPE_LABEL[t]} date`])];
   const rows = list.map(c => {
     const cells = [c.name, c.age, c.sex || '', g.name];
     for (const t of TYPE_ORDER){ const l = latestOfType(c, t), o = l ? overall(l, c) : null; cells.push(o ? o.pct : '', l ? l.date.slice(0, 10) : ''); }
@@ -1760,7 +1768,8 @@ function exportGroupCSV(g, list){
    ============================================================ */
 const TPL_TYPES = [{type:'health', label:'Health screen', tests:() => HEALTH, groups:() => H_GROUPS},
                    {type:'movement', label:'Movement screen', tests:() => TESTS, groups:() => GROUPS},
-                   {type:'strength', label:'Strength screen', tests:() => STRENGTH, groups:() => S_GROUPS}];
+                   {type:'strength', label:'Strength screen', tests:() => STRENGTH, groups:() => S_GROUPS},
+                   {type:'endurance', label:'Endurance screen', tests:() => ENDURANCE, groups:() => E_GROUPS}];
 const templates = () => (db.templates = db.templates || []);
 const tplTests = (tpl, type) => TPL_TYPES.find(x => x.type === type).tests().filter(t => tpl.tests.includes(t.id));
 const tplCount = tpl => TPL_TYPES.map(x => ({type:x.type, label:x.label, n: tplTests(tpl, x.type).length})).filter(x => x.n);
@@ -1801,7 +1810,7 @@ function renderTemplateEdit(tid){
         <p class="tpl-group">${esc(g.label)}</p>
         <div class="plan-grid">${ts.map(t => `<label class="plan-item">
           <input type="checkbox" value="${t.id}" data-type="${x.type}"${tpl.tests.includes(t.id) ? ' checked' : ''}>
-          <span><b>${esc(t.name)}</b><small>${esc(t.kind === 'health' ? (t.unit ? `Recorded in ${t.unit}` : 'Waist and hip') : t.kind === 'strength' ? t.kit : t.group === 'front' ? 'Facing the camera' : 'Side-on to the camera')}</small></span>
+          <span><b>${esc(t.name)}</b><small>${esc(t.kind === 'health' ? (t.unit ? `Recorded in ${t.unit}` : 'Waist and hip') : t.kind === 'strength' || t.kind === 'hold' || t.kind === 'trunk' ? t.kit : t.group === 'front' ? 'Facing the camera' : 'Side-on to the camera')}</small></span>
         </label>`).join('')}</div>`; }).join('')}`).join('')}
     <div class="btn-row end-row" style="margin-top:1.75rem">
       <button class="btn" id="saveTpl">Save template</button>
@@ -2145,6 +2154,337 @@ function renderStrengthTest(cid, sid, testId){
   devUI();
   if (sided) setSide(data.L.attempts.length && !data.R.attempts.length ? 'R' : 'L'); else renderAttempts();
   stateUI();
+}
+
+/* ============================================================
+   ENDURANCE SCREEN
+   30-second maximal holds on the dynos, plus McGill trunk endurance tests (stopwatch).
+   Holds: no population norms exist for 30-second maximal holds, so the score is the
+   force kept (average force over 30 s as a % of the peak), rated with clinic bands and
+   used to track a client against themselves. Trunk: scored on McGill's ratio guidelines.
+   ============================================================ */
+const HOLD_MS = 30000;
+const E_GROUPS = [{id:'holds', label:'30-second holds'}, {id:'trunk', label:'Trunk endurance (McGill)'}];
+const HOLD_STEPS_END = ['Push as hard as possible and keep pushing as hard as possible for the full 30 seconds – the app counts down and stops by itself.', 'Breathe out steadily throughout. Don’t hold the breath.', 'One hold per side. Rest at least 2 minutes before the next hold.'];
+const eHold = (id, name, device, sides, setup) => ({id, name, group:'holds', device, sides, kind:'hold', unit:'%', kit: DEVICE_INFO[device].label,
+  steps:[...setup, ...HOLD_STEPS_END],
+  pct(r){ return holdPct(r); }, summary(r, c){ return holdSummary(this, r, c); }});
+const ENDURANCE = [
+  eHold('e_grip', 'Grip hold', 'grip', 'LR', ['Seated, shoulder relaxed, elbow bent to 90°, forearm and wrist neutral – the same position as the grip strength test.']),
+  eHold('e_knee_ext', 'Knee extension hold', 'pushpull', 'LR', ['Seated at the edge of the plinth, knee at 90°, thighs supported.', 'Strap on the front of the shin just above the ankle, anchored so the tester doesn’t have to hold against the client for 30 seconds.']),
+  eHold('e_hip_abd', 'Hip abduction hold', 'anchor', 'both', ['Lying on the back, legs straight, straps on the outside of the legs just above the knee joint. Left and right are measured at the same time.']),
+  eHold('e_sh_er', 'Shoulder external rotation hold', 'anchor', 'both', ['Lying on the back, arms out to the side at 45°, elbows bent to 90° with the forearms pointing at the ceiling, strap just above the wrists. Left and right are measured at the same time.']),
+  {id:'e_trunk', name:'Trunk endurance (McGill)', group:'trunk', kind:'trunk', unit:'s', kit:'Stopwatch',
+   pct(r){ return trunkChecks(r).pct; }, summary(r){ return trunkSummary(r); },
+   value(r){ const v = ['flex','ext','sideL','sideR'].map(k => num(r[k])).filter(x => x != null); return v.length ? v.reduce((a, x) => a + x, 0) : null; }}
+];
+
+/* ---- hold maths ---- */
+function holdMetrics(series){
+  // series: [{t (ms from onset), v (kg)}]; anything after 30 s is ignored, missing time counts as zero force
+  const s = series.filter(p => p.t <= HOLD_MS);
+  if (s.length < 2) return null;
+  const peak = Math.max(...s.map(p => p.v));
+  if (!(peak > 0)) return null;
+  const area = (a, b) => { let sum = 0; for (let i = 1; i < s.length; i++){ const t0 = Math.max(a, s[i-1].t), t1 = Math.min(b, s[i].t); if (t1 > t0) sum += (s[i-1].v + s[i].v) / 2 * (t1 - t0); } return sum / 1000; };
+  const impulse = area(0, HOLD_MS), first = area(0, 5000) / 5, last = area(25000, HOLD_MS) / 5, mean = impulse / 30;
+  return {peak: r1(peak), mean: r1(mean), kept: Math.round(mean / peak * 100), fatigue: first > 0 ? Math.max(0, Math.round((first - last) / first * 100)) : null,
+          impulse: Math.round(impulse), early: s[s.length - 1].t < HOLD_MS - 1000,
+          trace: s.filter((_, i) => i % Math.max(1, Math.ceil(s.length / 90)) === 0).map(p => [Math.round(p.t), r1(p.v)])};
+}
+const holdSides = r => r && !r.unable ? ['L','R'].filter(k => r[k]).map(k => ({k, m:r[k]})) : [];
+function holdPct(r){
+  if (!r) return null; if (r.unable) return 0;
+  const v = holdSides(r).map(x => x.m.kept).filter(Number.isFinite);
+  return v.length ? avg(v) : null;
+}
+function holdSummary(t, r, c){
+  const lines = [], flags = [];
+  if (r.unable){ lines.push('Unable to complete'); return {lines, flags}; }
+  const sides = holdSides(r);
+  for (const {k, m} of sides){
+    lines.push(`${k === 'L' ? 'Left' : 'Right'}: kept ${m.kept}% of peak – peak ${m.peak.toFixed(1)} kg, average ${m.mean.toFixed(1)} kg, force dropped ${m.fatigue ?? '–'}% from the first to the last 5 seconds, total ${m.impulse} kg·s`);
+    if (m.early) flags.push({t:`${k === 'L' ? 'Left' : 'Right'} stopped before 30 seconds – the missing time counts as no force`});
+  }
+  if (sides.length === 2){
+    const [a, b] = sides.map(x => x.m.fatigue);
+    if (a != null && b != null && Math.abs(a - b) >= 10) flags.push({t:`Left and right fatigue differ by ${Math.abs(a - b)} points (left ${a}%, right ${b}%)`});
+  }
+  strengthCheck(c, t, r).forEach(f => flags.push(f));
+  lines.push('Score is the force kept over 30 seconds. There are no published norms for 30-second maximal holds, so bands are clinic judgement – best used to track change and compare sides.');
+  return {lines, flags};
+}
+/* Compare the hold's peak with the same-day strength test, as a check of effort */
+const HOLD_TO_STRENGTH = {e_grip:'s_grip', e_knee_ext:'s_knee_ext', e_hip_abd:'s_hip_abd_supine', e_sh_er:'s_sh_er'};
+function strengthCheck(c, t, r){
+  const id = HOLD_TO_STRENGTH[t.id], st = STRENGTH.find(x => x.id === id); if (!st || !r.at) return [];
+  const day = new Date(r.at).toDateString();
+  const ss = c.sessions.filter(x => stype(x) === 'strength' && new Date(x.date).toDateString() === day && x.results[id] && !x.results[id].unable)[0];
+  if (!ss) return [];
+  const b = sidesBest(st, ss.results[id]), out = [];
+  for (const {k, m} of holdSides(r)){
+    const ref = b[k] ?? b.one; if (!(ref > 0)) continue;
+    const p = Math.round(m.peak / ref * 100);
+    if (p < 80) out.push({t:`${k === 'L' ? 'Left' : 'Right'} hold peak was ${p}% of today’s strength test (${ref.toFixed(1)} kg) – check the hold started at full effort`});
+  }
+  return out;
+}
+
+/* ---- trunk ---- */
+function trunkChecks(r){
+  if (!r) return {pct:null, checks:[]};
+  if (r.unable) return {pct:0, checks:[]};
+  const f = num(r.flex), e = num(r.ext), L = num(r.sideL), R = num(r.sideR), checks = [];
+  if (f != null && e) checks.push({label:'Flexors vs extensors', ratio: f / e, ok: f / e < 1, rule:'under 1.0'});
+  if (R != null && e) checks.push({label:'Right side bridge vs extensors', ratio: R / e, ok: R / e < 0.75, rule:'under 0.75'});
+  if (L != null && e) checks.push({label:'Left side bridge vs extensors', ratio: L / e, ok: L / e < 0.75, rule:'under 0.75'});
+  if (L && R != null) checks.push({label:'Right vs left side bridge', ratio: R / L, ok: Math.abs(R / L - 1) <= 0.05, rule:'within 0.05 of 1.0'});
+  return {pct: checks.length ? Math.round(checks.filter(x => x.ok).length / checks.length * 100) : null, checks};
+}
+function trunkSummary(r){
+  const lines = [], flags = [];
+  if (r.unable){ lines.push('Unable to complete'); return {lines, flags}; }
+  const t = k => num(r[k]) != null ? `${num(r[k])} s` : 'not tested';
+  lines.push(`Flexor hold ${t('flex')}, back extensor hold ${t('ext')}, side bridge left ${t('sideL')}, right ${t('sideR')}`);
+  const {checks} = trunkChecks(r);
+  checks.forEach(x => (x.ok ? lines : flags).push(x.ok ? `${x.label}: ${x.ratio.toFixed(2)} (guideline ${x.rule})` : {t:`${x.label}: ${x.ratio.toFixed(2)} – outside McGill’s guideline (${x.rule})`}));
+  if (checks.length) lines.push(`Score is the share of McGill’s endurance ratio guidelines met (${checks.filter(x => x.ok).length} of ${checks.length}).`);
+  else lines.push('Record the back extensor hold to check the ratios.');
+  return {lines, flags};
+}
+
+/* ---- today's blood pressure, for the hold safety check ---- */
+function bpToday(c, s){
+  const h = c.sessions.filter(x => stype(x) === 'health' && sameDay(x, s) && x.results.h_bp).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const r = h?.results.h_bp, sys = num(r?.sys), dia = num(r?.dia);
+  return sys != null && dia != null ? {sys, dia} : null;
+}
+function bpNoteHTML(c, s){
+  const bp = bpToday(c, s);
+  if (!bp) return `<p class="bp-note warn"><b>No blood pressure recorded today.</b> Maximal holds raise blood pressure sharply – check it in a health screen first, especially for older or cardiac clients.</p>`;
+  if (bp.sys >= 180 || bp.dia >= 110) return `<p class="bp-note bad"><b>Blood pressure today ${bp.sys}/${bp.dia}.</b> Maximal holds aren’t advised at this level.</p>`;
+  if (bp.sys >= 160 || bp.dia >= 100) return `<p class="bp-note warn"><b>Blood pressure today ${bp.sys}/${bp.dia}.</b> Use clinical judgement before maximal holds and watch for breath-holding.</p>`;
+  return `<p class="bp-note ok">Blood pressure today ${bp.sys}/${bp.dia}.</p>`;
+}
+
+/* ---- 30-second hold runner ---- */
+function renderHoldTest(cid, sid, testId){
+  const c = getClient(cid), s = getSession(c, sid), t = ENDURANCE.find(x => x.id === testId);
+  if (!s || !t) return go(renderSession, cid, sid);
+  const kind = t.device, dev = DEVICE_INFO[kind], both = t.sides === 'both', sided = t.sides === 'LR';
+  const prev = s.results[t.id] && !s.results[t.id].unable ? JSON.parse(JSON.stringify(s.results[t.id])) : {};
+  const data = {L: prev.L || null, R: prev.R || null};
+  let side = 'L', dirty = false, state = 'rest', rest = [], base = {l:0, r:0, v:0}, rec = [], tStart = 0, timer = null;
+  const val = sm => both ? {l: sm.l, r: sm.r} : {v: sm.v};
+
+  app.innerHTML = shell(`
+    <section class="hero st-hero">
+      <p class="eyebrow">${esc(c.name)}, endurance screen</p>
+      <h1>${esc(t.name)}</h1>
+      <div class="devline"><span class="devdot" id="devDot"></span><span id="devStatus"></span><button class="btn sky small" id="devBtn"></button><button class="link" id="devAll">Dyno not in the list?</button></div>
+    </section>
+    ${bpNoteHTML(c, s)}
+    <div class="st-grid">
+      <section class="card st-live">
+        ${sided ? `<div class="seg" role="tablist"><button role="tab" data-side="L">Left</button><button role="tab" data-side="R">Right</button></div>` : ''}
+        <p class="st-state" id="stState" aria-live="polite"></p>
+        <div class="st-read ${both ? 'two' : ''}">
+          ${both ? `<div><span class="st-lab">Left</span><b id="liveL">0.0</b><span class="st-unit">kg</span></div><div><span class="st-lab">Right</span><b id="liveR">0.0</b><span class="st-unit">kg</span></div>`
+                 : `<div><span class="st-lab" id="liveLab">${sided ? 'Left' : 'Force'}</span><b id="liveV">0.0</b><span class="st-unit">kg</span></div>`}
+          <div><span class="st-lab">Time left</span><b id="clock">30</b><span class="st-unit">s</span></div>
+        </div>
+        <canvas id="stChart" width="1000" height="260" aria-label="Force over the 30-second hold"></canvas>
+        <div class="btn-row" style="margin-top:.8rem"><button class="btn quiet small" id="stopEarly" hidden>Client stopped – end now</button><button class="btn quiet small" id="cancelRec" hidden>Cancel this hold</button></div>
+      </section>
+      <aside class="card"><h2>How to test</h2><ol class="steps">${t.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+        <p class="note" style="margin-top:.9rem">The hold starts when the client pushes and stops by itself after 30 seconds. Stop early only if the client can’t continue.</p></aside>
+    </div>
+    <section class="card"><div class="card-head"><h2>Result</h2></div><div id="result"></div></section>
+    <div class="btn-row end-row next-row">
+      <button class="btn big-next" id="nextBtn"></button>
+      <button class="btn quiet" id="saveBack">Save and back to screen</button>
+      <button class="btn quiet" id="unable">Client unable</button>
+    </div>`, 'Back to screen');
+  bindShell();
+  const $ = id => document.getElementById(id);
+
+  function devUI(){
+    const on = devConnected(kind), st = devs[kind];
+    $('devDot').classList.toggle('on', on);
+    $('devStatus').textContent = !navigator.bluetooth ? 'Bluetooth needs Chrome or Edge – holds need the dyno connected.'
+      : on ? `${dev.label} connected${st?.battery != null ? `, battery ${st.battery}%` : ''}` : `${dev.label} not connected`;
+    $('devBtn').textContent = on ? 'Reconnect' : `Connect ${dev.label.toLowerCase()}`;
+    $('devBtn').hidden = !navigator.bluetooth; $('devAll').hidden = !navigator.bluetooth || on;
+    stateUI();
+  }
+  const doConnect = async showAll => {
+    $('devBtn').disabled = $('devAll').disabled = true; $('devStatus').textContent = `Connecting – choose the ${dev.label.toLowerCase()} from the list…`;
+    try { await connectDev(kind, showAll); }
+    catch(e){
+      if (e.name === 'RetryError') toast(e.message, true);
+      else if (e.name !== 'NotFoundError') toast(`Couldn’t connect: ${e.message}`, true);
+      else if (!showAll) toast('No dyno chosen. If it wasn’t in the list, wake it, close other tabs with this app, check it isn’t connected to the iPad or a phone, then try “Dyno not in the list?”.');
+    }
+    $('devBtn').disabled = $('devAll').disabled = false; devUI();
+  };
+  $('devBtn').onclick = () => doConnect(false);
+  $('devAll').onclick = () => doConnect(true);
+
+  const done = () => both ? data.L && data.R : data[side];
+  function stateUI(msg){
+    const el = $('stState'); if (!el) return;
+    el.classList.toggle('rec', state === 'rec');
+    $('stopEarly').hidden = $('cancelRec').hidden = state !== 'rec';
+    el.textContent = msg || (!devConnected(kind) ? 'Connect the dyno to start.'
+      : state === 'rec' ? 'Recording – keep pushing as hard as possible…'
+      : `${done() ? 'Hold recorded. To redo it, start again whenever the client is ready' : 'Ready – the hold starts when the client pushes'}${sided ? ` (${side === 'L' ? 'left' : 'right'} side)` : ''}.`);
+  }
+  const total = sm => both ? sm.l + sm.r : sm.v;
+  const med = a => { const b = [...a].sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : 0; };
+  const listener = sm => {
+    if (!sm){ state = 'rest'; rest = []; devUI(); return; }
+    const fmt = v => Math.max(0, v).toFixed(1);
+    if (both){ $('liveL').textContent = fmt(sm.l - base.l); $('liveR').textContent = fmt(sm.r - base.r); } else $('liveV').textContent = fmt(sm.v - base.v);
+    if (state === 'rest'){
+      rest.push(sm); while (rest.length && sm.t - rest[0].t > 1500) rest.shift();
+      const b = both ? {l:med(rest.map(x => x.l)), r:med(rest.map(x => x.r))} : {v:med(rest.map(x => x.v))};
+      base = total(b) < 5 ? b : (both ? {l:0, r:0} : {v:0});
+      if (total(sm) - total(base) > 2 && devConnected(kind)) startRec(sm.t);
+    }
+    if (state === 'rec'){
+      const p = {t: sm.t - tStart};
+      if (both){ p.l = Math.max(0, sm.l - base.l); p.r = Math.max(0, sm.r - base.r); } else p.v = Math.max(0, sm.v - base.v);
+      rec.push(p); drawChart(rec);
+      if (p.t >= HOLD_MS) finish();
+    }
+  };
+  devState(kind).listeners.add(listener);
+  function startRec(t){
+    state = 'rec'; rec = []; tStart = t; unlockAudio(); beep(880, 0.12); keepAwake(true); stateUI();
+    let last = 30; timer = setInterval(() => {
+      const left = Math.max(0, Math.ceil((HOLD_MS - (performance.now() - tStartWall)) / 1000));
+      $('clock').textContent = left;
+      if (left !== last && (left === 10 || left <= 3) && left > 0) beep(700, 0.06);
+      last = left;
+      if (left === 0 && state === 'rec') finish();
+    }, 200);
+    tStartWall = performance.now();
+  }
+  let tStartWall = 0;
+  function stopRec(){ clearInterval(timer); timer = null; keepAwake(false); state = 'rest'; rest = []; $('clock').textContent = '30'; }
+  function finish(){
+    if (state !== 'rec') return;
+    const recs = rec.slice(); stopRec(); beep(520, 0.35);
+    const put = (k, series) => { const m = holdMetrics(series); if (m) data[k] = m; return m; };
+    let ok;
+    if (both){ const a = put('L', recs.map(p => ({t:p.t, v:p.l}))), b = put('R', recs.map(p => ({t:p.t, v:p.r}))); ok = a || b; }
+    else ok = put(side, recs.map(p => ({t:p.t, v:p.v})));
+    if (!ok){ stateUI('That hold was too short to use – start again when ready.'); return; }
+    dirty = true; renderResult(); stateUI(`Hold saved. ${sided && side === 'L' ? 'Rest at least 2 minutes, then press Next for the right side.' : 'Press Next when ready.'}`);
+  }
+  $('stopEarly').onclick = () => finish();
+  $('cancelRec').onclick = () => { stopRec(); drawChart([]); stateUI('Hold cancelled.'); };
+
+  function drawChart(series){
+    const cv = $('stChart'); if (!cv) return;
+    const x = cv.getContext('2d'), W = cv.width, H = cv.height;
+    x.clearRect(0, 0, W, H);
+    const vals = series.flatMap(p => both ? [p.l, p.r] : [p.v]);
+    const top = Math.max(10, ...vals.map(v => v * 1.15));
+    const X = tt => (tt / HOLD_MS) * W, Y = v => H - 12 - (v / top) * (H - 30);
+    x.strokeStyle = 'rgba(0,114,141,.14)'; x.lineWidth = 1; x.font = '20px sans-serif'; x.fillStyle = '#565D61';
+    for (let i = 0; i <= 4; i++){ const v = top * i / 4, yy = Y(v); x.beginPath(); x.moveTo(0, yy); x.lineTo(W, yy); x.stroke(); if (i) x.fillText(`${Math.round(v)} kg`, 8, yy - 4); }
+    [5000, 25000].forEach(tt => { x.setLineDash([8, 8]); x.beginPath(); x.moveTo(X(tt), 0); x.lineTo(X(tt), H); x.stroke(); x.setLineDash([]); });
+    const line = (key, col) => { x.strokeStyle = col; x.lineWidth = 5; x.lineJoin = 'round'; x.beginPath(); series.forEach((p, i) => i ? x.lineTo(X(p.t), Y(p[key])) : x.moveTo(X(p.t), Y(p[key]))); x.stroke(); };
+    if (series.length > 1){ if (both){ line('l', '#2FB3D6'); line('r', '#111111'); } else line('v', '#00728D'); }
+  }
+  const traceOf = k => (data[k]?.trace || []).map(p => ({t:p[0], v:p[1]}));
+  function showSaved(){
+    if (both && data.L && data.R){ const a = traceOf('L'), b = traceOf('R'); drawChart(a.map((p, i) => ({t:p.t, l:p.v, r:b[i]?.v ?? 0}))); }
+    else if (!both && data[side]) drawChart(traceOf(side));
+    else drawChart([]);
+  }
+  function renderResult(){
+    const rows = ['L','R'].filter(k => data[k]).map(k => { const m = data[k]; return `<tr><td>${k === 'L' ? 'Left' : 'Right'}</td><td><b>${m.kept}%</b></td><td>${m.peak.toFixed(1)} kg</td><td>${m.mean.toFixed(1)} kg</td><td>${m.fatigue ?? '–'}%</td><td>${m.impulse} kg·s</td></tr>`; });
+    $('result').innerHTML = rows.length ? `<table class="att"><thead><tr><th>Side</th><th>Force kept</th><th>Peak</th><th>Average</th><th>Force drop</th><th>Total</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      : '<p class="empty">No hold yet.</p>';
+    showSaved(); nextUI();
+  }
+  function setSide(k){ side = k; stopRec(); if ($('liveLab')) $('liveLab').textContent = k === 'L' ? 'Left' : 'Right';
+    app.querySelectorAll('[data-side]').forEach(b => { b.classList.toggle('on', b.dataset.side === k); b.setAttribute('aria-selected', b.dataset.side === k); });
+    renderResult(); stateUI(); }
+  app.querySelectorAll('[data-side]').forEach(b => b.onclick = () => { if (state !== 'rec') setSide(b.dataset.side); });
+
+  function nextId(){ const list = plannedTests(s), i = list.findIndex(x => x.id === t.id); return list.slice(i + 1).find(x => !s.results[x.id])?.id || null; }
+  function nextUI(){ const n = nextId(); $('nextBtn').textContent = sided && side === 'L' ? 'Next: right side' : n ? `Next: ${ENDURANCE.find(x => x.id === n).name.toLowerCase()}` : 'Finish and back to screen'; }
+  const hasAny = () => !!(data.L || data.R);
+  function save(){ if (!hasAny()) return true; s.results[t.id] = {L:data.L, R:data.R, overridePct:null, at:new Date().toISOString()}; dirty = false; return saveDB(); }
+  $('nextBtn').onclick = () => {
+    if (state === 'rec'){ toast('Wait for the hold to finish.'); return; }
+    if (sided && side === 'L'){ if (!data.L && !confirm('No hold on the left side. Move to the right anyway?')) return; setSide('R'); return; }
+    if (!hasAny() && !confirm('No hold recorded for this test. Skip it?')) return;
+    if (!save()) return;
+    const n = nextId(); n ? go(renderTest, cid, sid, n) : go(renderSession, cid, sid);
+  };
+  $('saveBack').onclick = () => { if (state === 'rec'){ toast('Wait for the hold to finish.'); return; } if (save()) go(renderSession, cid, sid); };
+  $('unable').onclick = () => { if (!confirm('Record this test as unable to complete?')) return; stopRec(); s.results[t.id] = {unable:true, overridePct:null, at:new Date().toISOString()}; if (saveDB()) go(renderSession, cid, sid); };
+  $('back').onclick = () => { if ((dirty || state === 'rec') && !confirm('Leave without saving this hold?')) return; go(renderSession, cid, sid); };
+  cleanup = () => { devState(kind).listeners.delete(listener); stopRec(); };
+
+  devUI();
+  if (sided) setSide(data.L && !data.R ? 'R' : 'L'); else { renderResult(); stateUI(); }
+}
+
+/* ---- McGill trunk runner (stopwatch) ---- */
+const TRUNK_PARTS = [
+  {key:'flex', name:'Flexor hold', how:'Sitting with knees and hips bent to 90°, feet held down, arms crossed on the chest, back resting on a support angled at 60°. Move the support back about 10 cm and time the hold. Stop when the back drops towards the support.'},
+  {key:'ext', name:'Back extensor hold (Biering-Sørensen)', how:'Lying face down with the upper body off the end of the plinth from the top of the pelvis, legs strapped down, arms crossed on the chest. Time how long the upper body stays level. Stop when it drops below level.'},
+  {key:'sideL', name:'Side bridge – left', how:'Lying on the left side, legs straight, top foot in front of the bottom foot, up on the left elbow. Lift the hips so the body is in a straight line. Stop when the hips drop.'},
+  {key:'sideR', name:'Side bridge – right', how:'Same as the left, lying on the right side and up on the right elbow.'}
+];
+function renderTrunkTest(cid, sid, testId){
+  const c = getClient(cid), s = getSession(c, sid), t = ENDURANCE.find(x => x.id === testId);
+  if (!s || !t) return go(renderSession, cid, sid);
+  const r = s.results[t.id] && !s.results[t.id].unable ? {...s.results[t.id]} : {};
+  let running = null, t0 = 0, tick = null, dirty = false;
+  app.innerHTML = shell(`
+    <section class="hero st-hero"><p class="eyebrow">${esc(c.name)}, endurance screen</p><h1>${esc(t.name)}</h1>
+      <p class="lede">Time each hold to failure with the stopwatch, or type the seconds. Rest at least 1 minute between holds.</p></section>
+    <div class="trunk-grid">${TRUNK_PARTS.map(p => `
+      <section class="card trunk-card">
+        <h2>${esc(p.name)}</h2><p class="note">${esc(p.how)}</p>
+        <div class="trunk-row"><b class="trunk-clock" id="clk_${p.key}">${num(r[p.key]) != null ? num(r[p.key]).toFixed(1) : '0.0'}</b><span class="st-unit">s</span>
+          <button class="btn small" data-sw="${p.key}">Start</button></div>
+        <div class="field"><label for="in_${p.key}">Seconds</label><input id="in_${p.key}" type="number" step="0.1" min="0" inputmode="decimal" value="${num(r[p.key]) ?? ''}"></div>
+      </section>`).join('')}</div>
+    <div class="btn-row end-row next-row">
+      <button class="btn big-next" id="saveBack">Save and back to screen</button>
+      <button class="btn quiet" id="unable">Client unable</button>
+    </div>`, 'Back to screen');
+  bindShell();
+  const $ = id => document.getElementById(id);
+  const stop = () => { if (!running) return; clearInterval(tick); const k = running, secs = r1((performance.now() - t0) / 1000); running = null; keepAwake(false);
+    $('in_' + k).value = secs; $('clk_' + k).textContent = secs.toFixed(1); dirty = true; beep(520, 0.3);
+    app.querySelectorAll('[data-sw]').forEach(b => { b.textContent = 'Start'; b.disabled = false; }); };
+  app.querySelectorAll('[data-sw]').forEach(b => b.onclick = () => {
+    if (running === b.dataset.sw) return stop();
+    if (running) stop();
+    running = b.dataset.sw; t0 = performance.now(); unlockAudio(); beep(880, 0.1); keepAwake(true);
+    app.querySelectorAll('[data-sw]').forEach(x => { x.textContent = x === b ? 'Stop' : 'Start'; x.disabled = x !== b; });
+    tick = setInterval(() => { $('clk_' + running).textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
+  });
+  TRUNK_PARTS.forEach(p => $('in_' + p.key).oninput = () => { dirty = true; });
+  const save = () => {
+    if (running) stop();
+    const out = {}; let any = false;
+    for (const p of TRUNK_PARTS){ const v = parseFloat($('in_' + p.key).value); if (Number.isFinite(v) && v >= 0 && v <= 900){ out[p.key] = r1(v); any = true; } }
+    if (!any) return true;
+    s.results[t.id] = {...out, overridePct:null, at:new Date().toISOString()}; dirty = false; return saveDB();
+  };
+  $('saveBack').onclick = () => { if (save()) go(renderSession, cid, sid); };
+  $('unable').onclick = () => { if (!confirm('Record the trunk tests as unable to complete?')) return; if (running) stop(); s.results[t.id] = {unable:true, overridePct:null, at:new Date().toISOString()}; if (saveDB()) go(renderSession, cid, sid); };
+  $('back').onclick = () => { if (dirty && !confirm('Leave without saving these times?')) return; if (running) stop(); go(renderSession, cid, sid); };
+  cleanup = () => { if (tick) clearInterval(tick); keepAwake(false); };
 }
 
 /* ============================================================
@@ -2581,7 +2921,7 @@ function drawSession(doc, c, s){
   y += 72;
 
   // Movements
-  doc.setTextColor(...ink); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text(({strength:'Strength results', health:'Health measures', movement:'Movement scores'})[stype(s)], M, y);
+  doc.setTextColor(...ink); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text(({strength:'Strength results', health:'Health measures', movement:'Movement scores', endurance:'Endurance results'})[stype(s)], M, y);
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...grey); doc.text('Trend across screens', W - M - 22, y, {align:'center'});
   y += 3.5; doc.setDrawColor(...ink); doc.setLineWidth(0.5); doc.line(M, y, W - M, y); y += 7;
   const notDone = [];
@@ -2594,7 +2934,9 @@ function drawSession(doc, c, s){
     const wl = lines.flatMap(l => doc.splitTextToSize(clean(l), CW - 4));
     const wf = flags.flatMap(f => doc.splitTextToSize(clean(f.t), CW - 4).map(x => ({x, bad:f.bad})));
     const extra = r.overridePct != null ? 4 : 0;
-    need(19 + (wl.length + wf.length) * 3.6 + extra + 6);
+    const holdTr = t.kind === 'hold' && !r.unable ? holdSides(r).filter(x => x.m.trace?.length > 1) : [];
+    const trH = holdTr.length ? 24 : 0;
+    need(19 + (wl.length + wf.length) * 3.6 + extra + trH + 6);
     const top = y;
     doc.setTextColor(...ink); doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.text(clean(t.name), M, top);
     // bar + marker + band label
@@ -2620,6 +2962,20 @@ function drawSession(doc, c, s){
     doc.setFont('helvetica','bold');
     wf.forEach(f => { doc.setTextColor(...(f.bad ? [178,58,42] : [168,106,18])); doc.text(f.x, M, y); y += 3.6; });
     if (extra){ doc.setFont('helvetica','italic'); doc.setTextColor(...grey); doc.text(`Adjusted by practitioner (auto ${pctOf(t, r, c)}%)`, M, y); y += 3.6; }
+    if (trH){
+      // force over the 30-second hold, left in tide and right in ink
+      const bx = M, by = y + 1.5, bw = CW, bh = 17, top = Math.max(1, ...holdTr.flatMap(x => x.m.trace.map(p => p[1]))) * 1.1;
+      doc.setDrawColor(...line); doc.setLineWidth(0.2); doc.rect(bx, by, bw, bh);
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...grey);
+      doc.text('Force over 30 seconds', bx + 1.5, by + 3); doc.text(`${Math.round(top)} kg`, bx + bw - 1.5, by + 3, {align:'right'});
+      holdTr.forEach(({k, m}) => {
+        doc.setDrawColor(...(k === 'L' ? tide : ink)); doc.setLineWidth(0.5);
+        const pts = m.trace.map(p => [bx + p[0] / HOLD_MS * bw, by + bh - p[1] / top * (bh - 4)]);
+        for (let i = 1; i < pts.length; i++) doc.line(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]);
+      });
+      if (holdTr.length === 2){ doc.setTextColor(...tide); doc.text('Left', bx + 1.5, by + bh - 1.5); doc.setTextColor(...ink); doc.text('Right', bx + 9, by + bh - 1.5); }
+      y = by + bh + 3;
+    }
     y += 0.5; doc.setDrawColor(...line); doc.setLineWidth(0.3); doc.line(M, y, W - M, y); y += 6.5;
   }
   if (notDone.length){
@@ -2639,6 +2995,7 @@ function drawSession(doc, c, s){
   const KEY_TEXT = {
     movement: 'Each movement is scored as a percentage: 100% means it met the target for the client\'s age or showed no movement faults, and the score drops the further it is from the target. The overall score is the average of the movements tested.',
     strength: 'Each test is scored as a percentile against healthy adults of the same age and gender: 50% is average, and 75% means stronger than 75 in every 100 healthy people. Both sides are averaged. Each result also shows the % of the healthy average, and the trend charts track kg. Sources: grip, Dodds et al. (2014) and, from 60 years, Desrosiers et al. (1995) from the ESSA Outcome Measures booklet; key pinch, Mathiowetz et al. (1985); limb tests, Bohannon (1997) and Andrews et al. (1996). Mid-thigh pull, belt squat and seated hip tests use clinic targets. Ankle plantarflexion is scored on left/right symmetry.',
+    endurance: 'Each 30-second hold is scored as the force kept: the average force over 30 seconds as a percentage of the peak. Force drop compares the first and last 5 seconds, and total is the force added up over the hold (kg-seconds), which rises with both strength and endurance. There are no published norms for 30-second maximal holds, so the bands are clinic judgement and results are best used to track change and compare sides. Trunk endurance uses the McGill tests and is scored on the share of McGill ratio guidelines met: flexors shorter than extensors, each side bridge under 0.75 of the extensor time, and left and right side bridges within 5% of each other.',
     health: 'Each measure is rated against a reference range and converted to a percentage (100% = in the healthy range). Height and skeletal muscle mass are recorded for tracking and are not scored. References are listed under each measure.'
   };
   const key = doc.splitTextToSize(KEY_TEXT[stype(s)], CW);
@@ -2899,10 +3256,10 @@ function latestOfType(c, type){ return c.sessions.filter(s => s.status === 'comp
 function renderClient(cid, editing = false){
   const c = getClient(cid); if (!c) return go(renderHome);
   const sessions = [...c.sessions].sort((a,b) => b.date.localeCompare(a.date));
-  const ring = type => { const l = latestOfType(c, type), o = l ? overall(l, c) : null; return `<div class="latest">${ringHTML(o ? o.pct : null, 96, 9)}<div><p class="eyebrow">${({strength:'Strength', health:'Health', movement:'Movement'})[type]}</p>${o ? bandChip(o.pct) : ''}<p class="lede">${l ? fmtDate(l.date) : 'No screens yet'}</p></div></div>`; };
+  const ring = type => { const l = latestOfType(c, type), o = l ? overall(l, c) : null; return `<div class="latest">${ringHTML(o ? o.pct : null, 96, 9)}<div><p class="eyebrow">${TYPE_LABEL[type]}</p>${o ? bandChip(o.pct) : ''}<p class="lede">${l ? fmtDate(l.date) : 'No screens yet'}</p></div></div>`; };
   const trendCard = type => {
     const ss = sessions.filter(x => stype(x) === type); const tr = ss[0] ? historyFor(c, ss[0], x => overall(x, c)?.pct ?? null) : [];
-    return tr.length >= 2 ? `<section class="card"><div class="card-head"><h2>${({strength:'Strength', health:'Health', movement:'Movement'})[type]} progress</h2><span class="row-meta">Overall score across ${tr.length} screens</span></div><div class="trend-wrap">${sparkHTML(tr, 900, 150)}</div></section>` : '';
+    return tr.length >= 2 ? `<section class="card"><div class="card-head"><h2>${TYPE_LABEL[type]} progress</h2><span class="row-meta">Overall score across ${tr.length} screens</span></div><div class="trend-wrap">${sparkHTML(tr, 900, 150)}</div></section>` : '';
   };
   const sexLabel = c.sex === 'male' ? 'male' : c.sex === 'female' ? 'female' : null;
   app.innerHTML = shell(`
@@ -2911,8 +3268,8 @@ function renderClient(cid, editing = false){
         <span class="avatar lg" aria-hidden="true">${esc(initials(c.name))}</span>
         <div><h1>${esc(c.name)}</h1><p class="lede">Age ${c.age}${sexLabel ? `, ${sexLabel}` : ''}${c.height ? `, ${c.height} cm` : ''}${c.weight ? `, ${c.weight} kg` : ''}${groupOf(c) ? `, ${esc(groupOf(c).name)}` : ''} <button class="link on-dark" id="edit">Edit details</button></p></div>
       </div>
-      <div class="latest-pair">${ring('health')}${ring('movement')}${ring('strength')}</div>
-      <div class="hero-actions"><button class="btn sky" id="newHealth">New health screen</button><button class="btn sky" id="newMove">New movement screen</button><button class="btn sky" id="newStrength">New strength screen</button><button class="btn quiet" id="fromTpl">Start from a template</button></div>
+      <div class="latest-pair">${ring('health')}${ring('movement')}${ring('strength')}${ring('endurance')}</div>
+      <div class="hero-actions"><button class="btn sky" id="newHealth">New health screen</button><button class="btn sky" id="newMove">New movement screen</button><button class="btn sky" id="newStrength">New strength screen</button><button class="btn sky" id="newEndurance">New endurance screen</button><button class="btn quiet" id="fromTpl">Start from a template</button></div>
     </section>
     ${editing ? `<section class="card edit-card"><h2>Client details</h2>
       <div class="edit-grid">
@@ -2925,7 +3282,7 @@ function renderClient(cid, editing = false){
       </div>
       <div class="btn-row" style="margin-top:1rem"><button class="btn" id="eSave">Save details</button><button class="btn quiet" id="eCancel">Cancel</button></div>
     </section>` : ''}
-    ${trendCard('health')}${trendCard('movement')}${trendCard('strength')}
+    ${trendCard('health')}${trendCard('movement')}${trendCard('strength')}${trendCard('endurance')}
     <section class="card">
       <div class="card-head"><h2>Screens</h2></div>
       ${sessions.length ? `<ul class="clist">${sessions.map(s => { const o = overall(s, c), n = plannedTests(s).length; return `
@@ -2959,6 +3316,7 @@ function renderClient(cid, editing = false){
   document.getElementById('newMove').onclick = () => start('movement');
   document.getElementById('newStrength').onclick = () => start('strength');
   document.getElementById('newHealth').onclick = () => start('health');
+  document.getElementById('newEndurance').onclick = () => start('endurance');
   document.getElementById('fromTpl').onclick = () => go(renderPickTemplate, cid);
   app.querySelectorAll('[data-sid]').forEach(b => b.onclick = () => go(renderSession, cid, b.dataset.sid));
   document.getElementById('del').onclick = () => {
@@ -2968,7 +3326,7 @@ function renderClient(cid, editing = false){
 }
 
 /* ---------- Session (results) ---------- */
-const TYPE_ORDER = ['health', 'movement', 'strength'];
+const TYPE_ORDER = ['health', 'movement', 'strength', 'endurance'];
 const sameDay = (a, b) => new Date(a.date).toDateString() === new Date(b.date).toDateString();
 function daySessions(c, s){ return c.sessions.filter(x => sameDay(x, s) && Object.keys(x.results).length).sort((a, b) => TYPE_ORDER.indexOf(stype(a)) - TYPE_ORDER.indexOf(stype(b))); }
 const fmtVal = v => Number.isInteger(v) ? String(v) : (Math.abs(v) < 10 ? v.toFixed(2).replace(/0$/, '') : v.toFixed(1));
@@ -3082,6 +3440,7 @@ function renderTest(cid, sid, testId){
   const st0 = stype(getSession(getClient(cid), sid));
   if (st0 === 'strength') return renderStrengthTest(cid, sid, testId);
   if (st0 === 'health') return go(renderSession, cid, sid);
+  if (st0 === 'endurance') return (ENDURANCE.find(x => x.id === testId)?.kind === 'trunk' ? renderTrunkTest : renderHoldTest)(cid, sid, testId);
   const c = getClient(cid), s = getSession(c, sid), test = testById(testId);
   if (!s || !test) return go(renderClient, cid);
   if (test.needsHeight && !c.height){
