@@ -2557,14 +2557,15 @@ function drawSession(doc, c, s){
 }
 /* ---------- Plain-text summary for clinical notes ---------- */
 function notesText(c, s){
-  const o = overall(s, c), prev = previousSession(c, s), po = prev ? overall(prev, c) : null, planned = plannedTests(s), isS = stype(s) === 'strength', isH = stype(s) === 'health';
+  const o = overall(s, c), prev = previousSession(c, s), po = prev ? overall(prev, c) : null, planned = plannedTests(s), isS = stype(s) === 'strength';
   const out = [];
   out.push(`${screenNoun(s).toUpperCase()} – ${fmtDate(s.date)}`);
   out.push(`${c.name}, age ${c.age}${c.sex ? `, ${c.sex}` : ''}${c.height ? `, height ${c.height} cm` : ''}${isS && (s.weight || c.weight) ? `, body weight ${s.weight || c.weight} kg` : ''}`);
+  out.push('');
   if (o){
-    let line = `Overall: ${o.pct}% (${bandFor(o.pct).label}), from ${o.n} of ${planned.length} ${itemNoun(s, planned.length)}.`;
-    if (po){ const d = o.pct - po.pct; line += ` Previous screen ${fmtDate(prev.date)}: ${po.pct}% (${d >= 0 ? '+' : ''}${d} points).`; }
-    out.push(line);
+    out.push(`Overall: ${o.pct}% (${bandFor(o.pct).label})`);
+    out.push(`Tested: ${o.n} of ${planned.length} ${itemNoun(s, planned.length)}`);
+    if (po){ const d = o.pct - po.pct; out.push(`Previous screen (${fmtDate(prev.date)}): ${po.pct}%, ${d >= 0 ? '+' : ''}${d} points`); }
   } else if (!Object.keys(s.results).length) out.push(`No ${itemNoun(s, 2)} recorded.`);
   const notDone = [];
   for (const g of groupsFor(s)){
@@ -2572,22 +2573,20 @@ function notesText(c, s){
     const done = ts.filter(t => s.results[t.id]);
     ts.filter(t => !done.includes(t)).forEach(t => notDone.push(t.name));
     if (!done.length) continue;
-    out.push('', `${g.label}:`);
+    out.push('', '', g.label.toUpperCase());
     for (const t of done){
       const r = s.results[t.id], v = finalPct(t, r, c);
       const pv = prev ? finalPct(t, prev.results[t.id], c) : null;
       const {lines, flags} = summaryOf(t, r, c);
-      let head = v != null ? `- ${t.name}: ${v}% (${bandFor(v).label})${symScore(t, r, c) ? ' symmetry' : ''}` : `- ${t.name}`;
-      if (pv != null) head += `, previously ${pv}%`;
-      if (r.overridePct != null) head += ` [adjusted by practitioner, auto ${pctOf(t, r, c)}%]`;
-      out.push(head);
-      lines.forEach(l => out.push(`    ${l}`));
-      if (flags.length) out.push(`    Flags: ${flags.map(f => f.t).join('; ')}`);
+      out.push('', v != null ? `${t.name}: ${v}% (${bandFor(v).label})${symScore(t, r, c) ? ' symmetry' : ''}` : t.name);
+      if (pv != null) out.push(`   Previously ${pv}%`);
+      if (r.overridePct != null) out.push(`   Adjusted by practitioner (automatic score ${pctOf(t, r, c)}%)`);
+      lines.forEach(l => out.push(`   ${l}`));
+      if (flags.length) out.push(`   Flags: ${flags.map(f => f.t).join('; ')}`);
     }
   }
-  if (notDone.length) out.push('', `Planned but not tested: ${notDone.join(', ')}`);
-  if (s.notes && s.notes.trim()) out.push('', `Notes: ${s.notes.trim()}`);
-  out.push('', ({strength:'Isometric strength measured with clinic dynamometers; peak force is the best of the recorded attempts, scored against clinic targets (grip for 60+ from the ESSA Outcome Measures booklet).', health:'Measures rated against the reference ranges shown (ESSA Outcome Measures booklet where available).', movement:'Camera-based movement screen; results are indicative and read alongside clinical assessment.'})[stype(s)]);
+  if (notDone.length) out.push('', '', 'NOT TESTED', notDone.join(', '));
+  if (s.notes && s.notes.trim()) out.push('', '', 'NOTES', s.notes.trim());
   return out.join('\n');
 }
 async function copyText(text){
