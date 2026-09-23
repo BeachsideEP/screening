@@ -1428,6 +1428,50 @@ function refKgSex(ref, sex, age, w){
   }
   return null;
 }
+/* Spread (standard deviation, % of body weight) for the Bohannon values, same order as BOH */
+const BOH_SD = {
+  sh_abd:   {male:[6.6,8.4,5.0,5.2,6.0,4.8],       female:[3.5,3.6,4.8,4.1,4.4,4.4]},
+  sh_er:    {male:[4.4,5.4,4.4,3.5,5.0,4.4],       female:[3.1,3.4,4.4,4.0,3.9,3.4]},
+  ank_df:   {male:[6.6,8.8,9.5,10.3,9.9,6.7],      female:[8.2,8.4,11.0,11.3,13.0,8.6]},
+  knee_ext: {male:[15.1,11.7,9.8,11.2,10.6,8.6],   female:[13.2,15.3,12.4,12.6,13.8,9.0]},
+  hip_abd:  {male:[6.9,7.0,6.9,7.9,7.7,6.7],       female:[6.3,7.9,6.8,7.1,6.6,6.3]}
+};
+/* Key pinch spread (lb), Mathiowetz 1985, same bands as KEY_PINCH_LB */
+const KEY_PINCH_SD_LB = {
+  male:   {R:[3.5,4.9,4.8,3.2,2.6,3.9,4.4,4.2,5.4,3.9,2.4,4.6], L:[3.4,4.4,5.1,3.9,4.0,4.4,4.2,4.7,4.1,3.6,3.0,3.0]},
+  female: {R:[2.0,2.1,3.0,2.0,3.1,3.2,2.5,2.5,2.7,2.6,2.9,2.3], L:[2.1,2.1,3.6,2.7,3.1,2.9,2.7,2.2,2.5,2.8,3.0,2.6]}
+};
+/* Where no spread is published: grip 19% of the average (Dodds 2014: peak 51/31 kg with weak-grip
+   cut-offs of 27/16 kg at 2.5 SD below); Andrews equations and clinic targets 20% (estimate,
+   in line with the spread in the Bohannon tables). */
+const SPREAD_GRIP = 0.19, SPREAD_EST = 0.2;
+const decIdx = age => Math.min(5, Math.max(0, Math.floor((age || 40) / 10) - 2));
+const pinchBand = age => Math.min(11, Math.max(0, Math.floor(((age || 40) - 20) / 5)));
+/* Average and spread for one side of a test, in kg */
+function normStats(t, c, w, side = 'R'){
+  if (t.norm === 'grip'){ const m = gripTarget(c, side); return {m, sd: m * SPREAD_GRIP}; }
+  if (t.norm === 'pinch') return {m: pinchTarget(c, side), sd: bothSexes(c, sx => KEY_PINCH_SD_LB[sx][side][pinchBand(c.age)] * LB)};
+  if (t.ref && w){
+    const m = refTarget(t, c, w); if (!m) return null;
+    return {m, sd: BOH_SD[t.ref] ? bothSexes(c, sx => BOH_SD[t.ref][sx][decIdx(c.age)] / 100 * w) : m * SPREAD_EST};
+  }
+  if (t.bw && w){ const m = r1(t.bw * w); return {m, sd: m * SPREAD_EST}; }
+  return null;
+}
+/* Normal distribution percentile, kept between 1 and 99 */
+function normCdf(z){
+  const x = Math.abs(z) / Math.SQRT2, k = 1 / (1 + 0.3275911 * x);
+  const e = 1 - (((((1.061405429 * k - 1.453152027) * k) + 1.421413741) * k - 0.284496736) * k + 0.254829592) * k * Math.exp(-x * x);
+  return z >= 0 ? (1 + e) / 2 : (1 - e) / 2;
+}
+const pctile = (v, st) => Number.isFinite(v) && st && st.sd > 0 ? Math.min(99, Math.max(1, Math.round(normCdf((v - st.m) / st.sd) * 100))) : null;
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({1:'st', 2:'nd', 3:'rd'})[n % 10] || 'th');
+/* Best kg for trend charts: the single value, or left and right averaged */
+function strengthTrendKg(t, r){
+  if (!r || r.unable) return null;
+  const b = sidesBest(t, r), v = [b.one, b.L, b.R].filter(x => x != null);
+  return v.length ? r1(v.reduce((a, x) => a + x, 0) / v.length) : null;
+}
 const refTarget = (t, c, w) => w ? r1(bothSexes(c, sx => refKgSex(t.ref, sx, c.age, w))) : null;
 
 const bestOf = (atts, key = 'peak') => atts?.length ? Math.max(...atts.map(a => a[key] || 0)) : null;
@@ -1451,8 +1495,8 @@ const symScore = (t, r, c) => t.kind === 'strength' && t.sides !== 'one' && !t.n
 function strengthPct(t, r, c){
   if (r.unable) return 0;
   const b = sidesBest(t, r), w = bwOf(r, c);
-  if (t.sides === 'one'){ const g = targetKg(t, c, w); return b.one != null && g ? grade(b.one, g, g * 0.4) : null; }
-  const v = ['L','R'].filter(k => b[k] != null && targetKg(t, c, w, k)).map(k => { const g = targetKg(t, c, w, k); return grade(b[k], g, g * 0.4); });
+  if (t.sides === 'one') return b.one != null ? pctile(b.one, normStats(t, c, w)) : null;
+  const v = ['L','R'].filter(k => b[k] != null).map(k => pctile(b[k], normStats(t, c, w, k))).filter(x => x != null);
   return v.length ? avg(v) : symmetry(b.L, b.R);
 }
 const tgtText = t => t.bw >= 1 ? `${t.bw} × body weight` : `${Math.round(t.bw * 100)}% of body weight`;
@@ -1460,11 +1504,13 @@ function strengthSummary(t, r, c){
   if (r.unable) return {lines:['Unable to complete'], flags:[]};
   const lines = [], flags = [], b = sidesBest(t, r), w = bwOf(r, c);
   const pctBW = v => w ? `, ${Math.round(v / w * 100)}% of body weight` : '';
+  const vsAvg = (v, side) => { const st = normStats(t, c, w, side), p = pctile(v, st);
+    return p != null ? ` – ${ordinal(p)} percentile, ${Math.round(v / st.m * 100)}% of the healthy average` : pctBW(v); };
   if (t.sides === 'one'){
     const n = r.attempts?.length || 0;
-    if (b.one != null) lines.push(`Best ${b.one.toFixed(1)} kg from ${n} attempt${n === 1 ? '' : 's'}${w ? `, ${(b.one / w).toFixed(2)} × body weight` : ''}`);
+    if (b.one != null) lines.push(`Best ${b.one.toFixed(1)} kg from ${n} attempt${n === 1 ? '' : 's'}${w ? `, ${(b.one / w).toFixed(2)} × body weight` : ''}${normStats(t, c, w) ? vsAvg(b.one) : ''}`);
   } else {
-    for (const k of ['L','R']) lines.push(`${k === 'L' ? 'Left' : 'Right'}: ${b[k] != null ? `${b[k].toFixed(1)} kg${pctBW(b[k])}` : 'not tested'}`);
+    for (const k of ['L','R']) lines.push(`${k === 'L' ? 'Left' : 'Right'}: ${b[k] != null ? `${b[k].toFixed(1)} kg${vsAvg(b[k], k)}` : 'not tested'}`);
     const sym = symmetry(b.L, b.R);
     if (sym != null){
       lines.push(`Left/right symmetry ${sym}%`);
@@ -1473,18 +1519,18 @@ function strengthSummary(t, r, c){
   }
   if (t.norm === 'grip' || t.norm === 'pinch'){
     const f = t.norm === 'grip' ? gripTarget : pinchTarget;
-    lines.push(`Target for age${c.sex ? ' and gender' : ''}: left ${f(c, 'L')} kg, right ${f(c, 'R')} kg`);
+    lines.push(`Healthy average for age${c.sex ? ' and gender' : ''}: left ${f(c, 'L')} kg, right ${f(c, 'R')} kg`);
     if (!c.sex) flags.push({t:`Add the client’s gender for accurate ${t.norm} targets`});
   } else if (t.ref){
     const g = refTarget(t, c, w);
-    lines.push(g ? `Target for age${c.sex ? ' and gender' : ''}: ${g} kg (${Math.round(g / w * 100)}% of body weight)` : 'Target set by age, gender and body weight');
+    lines.push(g ? `Healthy average for age${c.sex ? ' and gender' : ''}: ${g} kg (${Math.round(g / w * 100)}% of body weight)` : 'Healthy average set by age, gender and body weight');
     if (t.refNote) lines.push(t.refNote);
-    if (!w) flags.push({t:'Add body weight to score against the target – scored on left/right symmetry for now'});
+    if (!w) flags.push({t:'Add body weight to score against the healthy average – scored on left/right symmetry for now'});
     else if (!c.sex) flags.push({t:'Add the client’s gender for an accurate target'});
   } else if (t.symOnly){
     lines.push('Scored on left/right symmetry – hand-held readings for this test aren’t reliable enough to compare with a target');
   } else if (t.bw){
-    lines.push(w ? `Target ${tgtText(t)} (${r1(t.bw * w)} kg)` : `Target ${tgtText(t)}`);
+    lines.push(w ? `Clinic target ${tgtText(t)} (${r1(t.bw * w)} kg), scored as the average – no published values` : `Clinic target ${tgtText(t)}`);
     if (!w) flags.push({t:'Add body weight to score against the target – scored on left/right symmetry for now'});
   }
   return {lines, flags};
@@ -1508,7 +1554,7 @@ const STRENGTH = [
   sTest('s_pinch', 'Pinch grip', 'grip', 'grip', 'LR', S_STEPS.pinch, {norm:'pinch'}),
   sTest('s_knee_ext', 'Seated knee extension', 'pushpull', 'pushpull', 'LR', ['Seated at the edge of the plinth, knee at 90°, thighs supported, hands across the chest.', 'Meter or strap on the front of the shin, just above the ankle.', ...S_STEPS.hhd.slice(1)], {ref:'knee_ext'}),
   sTest('s_knee_flex', 'Seated knee flexion', 'pushpull', 'pushpull', 'LR', ['Seated at the edge of the plinth, knee at 90°, thighs supported, hands in the lap.', 'Meter or strap on the back of the shin, just above the ankle.', ...S_STEPS.hhd.slice(1)], {ref:'knee_flex'}),
-  sTest('s_knee_flex_prone', 'Prone knee flexion', 'pushpull', 'pushpull', 'LR', ['Lying face down, knee bent to 90°.', 'Meter or strap on the back of the shin, just above the heel.', ...S_STEPS.hhd.slice(1)], {ref:'knee_flex', refNote:'Target uses the seated knee flexion reference – no published values for prone testing'}),
+  sTest('s_knee_flex_prone', 'Prone knee flexion', 'pushpull', 'pushpull', 'LR', ['Lying face down, knee bent to 90°.', 'Meter or strap on the back of the shin, just above the heel.', ...S_STEPS.hhd.slice(1)], {ref:'knee_flex', refNote:'Uses the seated knee flexion average – no published values for prone testing'}),
   sTest('s_sh_flex', 'Shoulder flexion', 'pushpull', 'pushpull', 'LR', ['Lying on the back, arm raised to 90° so it points at the ceiling, elbow straight.', 'Meter on the front of the arm just above the elbow. The client pushes the arm up towards their head.', ...S_STEPS.hhd.slice(1)], {ref:'sh_flex'}),
   sTest('s_sh_abd', 'Shoulder abduction', 'pushpull', 'pushpull', 'LR', ['Lying on the back, arm out to the side at 45°, elbow straight.', 'Meter on the outside of the arm just above the elbow. The client pushes the arm out to the side.', ...S_STEPS.hhd.slice(1)], {ref:'sh_abd'}),
   sTest('s_ank_df', 'Ankle dorsiflexion', 'pushpull', 'pushpull', 'LR', ['Lying on the back, knee straight, ankle in neutral, heel supported off the end of the plinth.', 'Meter on the top of the foot, just behind the toes.', ...S_STEPS.hhd.slice(1)], {ref:'ank_df'}),
@@ -1516,7 +1562,7 @@ const STRENGTH = [
   sTest('s_imtp', 'Isometric mid-thigh pull', 'pushpull', 'pushpull', 'one', ['Standing on the strap, bar at mid-thigh, knees about 125–145°, trunk upright.', 'Pull as hard and fast as possible for 3–5 seconds.', '2–3 attempts, 1–2 minutes rest between.'], {bw:2.0}),
   sTest('s_belt_squat', 'Isometric belt squat', 'pushpull', 'pushpull', 'one', ['Belt around the hips, strap anchored to the floor, squat position (knees about 90°).', 'Drive up as hard as possible for 3–5 seconds.', '2–3 attempts, 1–2 minutes rest between.'], {bw:1.5}),
   sTest('s_hip_abd_supine', 'Supine hip abduction', 'anchor', 'anchor', 'both', ['Lying on the back, legs straight, straps on the outside of the legs just above the knee joint – not at the ankles.', 'Push both legs out as hard as possible for 3–5 seconds. Left and right are measured at the same time.', '3 attempts, 30–60 seconds rest between.'], {ref:'hip_abd'}),
-  sTest('s_hip_add_supine', 'Supine hip adduction', 'anchor', 'anchor', 'both', ['Lying on the back, legs straight, the dyno between the legs just above the knee joint – not at the ankles.', 'Squeeze both legs together as hard as possible for 3–5 seconds.', '3 attempts, 30–60 seconds rest between.'], {ref:'hip_abd', refNote:'Target uses the hip abduction reference – adduction and abduction strength are about equal in healthy adults'}),
+  sTest('s_hip_add_supine', 'Supine hip adduction', 'anchor', 'anchor', 'both', ['Lying on the back, legs straight, the dyno between the legs just above the knee joint – not at the ankles.', 'Squeeze both legs together as hard as possible for 3–5 seconds.', '3 attempts, 30–60 seconds rest between.'], {ref:'hip_abd', refNote:'Uses the hip abduction average – adduction and abduction strength are about equal in healthy adults'}),
   sTest('s_hip_abd_seated', 'Seated hip abduction', 'anchor', 'anchor', 'both', ['Seated, hips and knees at 90°, straps just above the knees.', 'Push both knees out as hard as possible for 3–5 seconds.', '3 attempts, 30–60 seconds rest between.'], {bw:0.5}),
   sTest('s_hip_add_seated', 'Seated hip adduction', 'anchor', 'anchor', 'both', ['Seated, hips and knees at 90°, the dyno between the knees.', 'Squeeze the knees together as hard as possible for 3–5 seconds.', '3 attempts, 30–60 seconds rest between.'], {bw:0.4}),
   sTest('s_sh_ir', 'Shoulder internal rotation', 'anchor', 'anchor', 'both', ['Lying on the back, arm out to the side at 45°, elbow bent to 90° with the forearm pointing at the ceiling, strap just above the wrist.', 'Rotate the forearm inwards as hard as possible for 3–5 seconds.', 'Test one arm at a time or both together – each side is recorded separately.'], {ref:'sh_ir'}),
@@ -2563,7 +2609,10 @@ function drawSession(doc, c, s){
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...grey);
       doc.text(((r.overridePct == null && t.kind === 'health' && t.assess(r, c)?.label) || bandFor(v).label) + (symScore(t, r, c) ? ' (left/right symmetry)' : ''), clamp(mx, barX + 12, barX + barW - 12), by + 9.3, {align:'center'});
       circle(circX, top + 5, v, 6.3);
-      spark(sparkX, top - 2.5, sparkW, 13, historyFor(c, s, x => finalPct(t, x.results[t.id], c)));
+      if (t.kind === 'strength'){
+        const hk = historyFor(c, s, x => x.results[t.id] ? strengthTrendKg(t, x.results[t.id]) : null), mk = Math.max(1, ...hk.map(p => p.v)) * 1.15;
+        spark(sparkX, top - 2.5, sparkW, 13, hk.map(p => ({...p, v: Math.round(p.v / mk * 100)})));
+      } else spark(sparkX, top - 2.5, sparkW, 13, historyFor(c, s, x => finalPct(t, x.results[t.id], c)));
     }
     y = top + 17.5;
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...ink);
@@ -2589,7 +2638,7 @@ function drawSession(doc, c, s){
   }
   const KEY_TEXT = {
     movement: 'Each movement is scored as a percentage: 100% means it met the target for the client\'s age or showed no movement faults, and the score drops the further it is from the target. The overall score is the average of the movements tested.',
-    strength: 'Each test is scored against the average for healthy adults of the same age and gender. 100% means the average was reached on both sides; the score drops the further below it. Sources: grip, Dodds et al. (2014) and, from 60 years, Desrosiers et al. (1995) from the ESSA Outcome Measures booklet; key pinch, Mathiowetz et al. (1985); limb tests, Bohannon (1997) and Andrews et al. (1996), as a percentage of body weight. Mid-thigh pull, belt squat and seated hip tests use clinic targets. Ankle plantarflexion is scored on left/right symmetry.',
+    strength: 'Each test is scored as a percentile against healthy adults of the same age and gender: 50% is average, and 75% means stronger than 75 in every 100 healthy people. Both sides are averaged. Each result also shows the % of the healthy average, and the trend charts track kg. Sources: grip, Dodds et al. (2014) and, from 60 years, Desrosiers et al. (1995) from the ESSA Outcome Measures booklet; key pinch, Mathiowetz et al. (1985); limb tests, Bohannon (1997) and Andrews et al. (1996). Mid-thigh pull, belt squat and seated hip tests use clinic targets. Ankle plantarflexion is scored on left/right symmetry.',
     health: 'Each measure is rated against a reference range and converted to a percentage (100% = in the healthy range). Height and skeletal muscle mass are recorded for tracking and are not scored. References are listed under each measure.'
   };
   const key = doc.splitTextToSize(KEY_TEXT[stype(s)], CW);
@@ -2937,15 +2986,16 @@ function renderSession(cid, sid){
     </article>`;
     const {lines, flags} = summaryOf(t, r, c);
     const prev = previousSession(c, s), pv = prev ? finalPct(t, prev.results[t.id], c) : null;
-    const hist = val != null ? historyFor(c, s, x => x.results[t.id] ? t.value(x.results[t.id]) : null) : historyFor(c, s, x => finalPct(t, x.results[t.id], c));
-    const topV = val != null ? Math.max(1, ...hist.map(p => p.v)) * 1.15 : null;
+    const kgT = val != null || t.kind === 'strength';
+    const hist = kgT ? historyFor(c, s, x => x.results[t.id] ? (t.kind === 'strength' ? strengthTrendKg(t, x.results[t.id]) : t.value(x.results[t.id])) : null) : historyFor(c, s, x => finalPct(t, x.results[t.id], c));
+    const topV = kgT ? Math.max(1, ...hist.map(p => p.v)) * 1.15 : null;
     return `<article class="mcard" style="--band:${val != null ? 'var(--tide)' : bandColor(fin)}">
       <div class="m-top">
         <div><h3>${esc(t.name)}</h3><p class="view">${esc(isH ? (H_GROUPS.find(g => g.id === t.group)?.label || '') : t.kit)}${r.overridePct != null ? ' <span class="tag">Adjusted</span>' : ''}${symScore(t, r, c) ? ' – % is left/right symmetry' : ''}</p></div>
         ${val != null ? `<span class="kg-badge">${fmtVal(val)}<small>${esc(t.unit)}</small></span>` : ringHTML(fin, 64, 7)}
       </div>
       ${val != null ? '' : miniBarHTML(fin, r.overridePct == null && t.kind === 'health' ? t.assess(r, c)?.label : null)}
-      ${hist.length > 1 ? `<div class="m-trend">${val != null ? sparkHTML(hist.map(p => ({...p, v: Math.round(p.v / topV * 100), label:`${fmtVal(p.v)} ${t.unit}`})), 420, 70) : sparkHTML(hist, 420, 70)}<p class="spark-cap">Last ${hist.length} screens${val != null ? '' : pv != null ? `, previously ${pv}%` : ''}</p></div>` : ''}
+      ${hist.length > 1 ? `<div class="m-trend">${kgT ? sparkHTML(hist.map(p => ({...p, v: Math.round(p.v / topV * 100), label:`${fmtVal(p.v)} ${t.unit}`})), 420, 70) : sparkHTML(hist, 420, 70)}<p class="spark-cap">Last ${hist.length} screens${t.kind === 'strength' && val == null ? ', best kg' + (t.sides === 'one' ? '' : ' (left and right averaged)') + (pv != null ? `, previously ${pv}%` : '') : val != null ? '' : pv != null ? `, previously ${pv}%` : ''}</p></div>` : ''}
       <div class="detail">${lines.map(l => `<p>${esc(l)}</p>`).join('')}${flags.map(f => `<p class="flag${f.bad ? ' bad' : ''}">${esc(f.t)}</p>`).join('')}</div>
       <div class="controls">
         ${isH ? '' : `<button class="btn small quiet" data-run="${t.id}">${isS ? 'Add or redo attempts' : 'Redo test'}</button>`}
