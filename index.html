@@ -2294,7 +2294,7 @@ function renderHoldTest(cid, sid, testId){
           <div><span class="st-lab">Time left</span><b id="clock">30</b><span class="st-unit">s</span></div>
         </div>
         <canvas id="stChart" width="1000" height="260" aria-label="Force over the 30-second hold"></canvas>
-        <div class="btn-row" style="margin-top:.8rem"><button class="btn quiet small" id="stopEarly" hidden>Client stopped – end now</button><button class="btn quiet small" id="cancelRec" hidden>Cancel this hold</button></div>
+        <div class="btn-row" style="margin-top:.8rem"><button class="btn small" id="redo" hidden>Redo this hold</button><button class="btn quiet small" id="stopEarly" hidden>Client stopped – end now</button><button class="btn quiet small" id="cancelRec" hidden>Cancel this hold</button></div>
       </section>
       <aside class="card"><h2>How to test</h2><ol class="steps">${t.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
         <p class="note" style="margin-top:.9rem">The hold starts when the client pushes and stops by itself after 30 seconds. Stop early only if the client can’t continue.</p></aside>
@@ -2335,17 +2335,20 @@ function renderHoldTest(cid, sid, testId){
     const el = $('stState'); if (!el) return;
     el.classList.toggle('rec', state === 'rec');
     $('stopEarly').hidden = $('cancelRec').hidden = state !== 'rec';
+    $('redo').hidden = state !== 'done';
     el.textContent = msg || (!devConnected(kind) ? 'Connect the dyno to start.'
       : state === 'rec' ? 'Recording – keep pushing as hard as possible…'
-      : state === 'cool' ? 'Time’s up – the client can relax.'
-      : `${done() ? 'Hold recorded. To redo it, start again whenever the client is ready' : 'Ready – the hold starts when the client pushes'}${sided ? ` (${side === 'L' ? 'left' : 'right'} side)` : ''}.`);
+      : state === 'done' ? `Hold recorded${sided ? ` for the ${side === 'L' ? 'left' : 'right'} side` : ''}. Press Next, or Redo this hold to repeat it.`
+      : state === 'cool' ? 'Waiting for the client to let go of the dyno…'
+      : `Ready – the hold starts when the client pushes${sided ? ` (${side === 'L' ? 'left' : 'right'} side)` : ''}.`);
   }
   const total = sm => both ? sm.l + sm.r : sm.v;
   const med = a => { const b = [...a].sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : 0; };
   const listener = sm => {
-    if (!sm){ state = 'rest'; rest = []; devUI(); return; }
+    if (!sm){ if (state === 'rec'){ stopRec(); arm(); } devUI(); return; }
     const fmt = v => Math.max(0, v).toFixed(1);
     if (both){ $('liveL').textContent = fmt(sm.l - base.l); $('liveR').textContent = fmt(sm.r - base.r); } else $('liveV').textContent = fmt(sm.v - base.v);
+    if (state === 'done') return;   // a saved hold never restarts by itself – press Redo
     if (state === 'cool'){
       // after a hold: wait until the client has let go for a second before a new hold can start
       if (total(sm) - total(base) < 1.5){ if (lowSince == null) lowSince = sm.t; else if (sm.t - lowSince > 1000){ state = 'rest'; rest = []; stateUI(); } }
@@ -2367,7 +2370,7 @@ function renderHoldTest(cid, sid, testId){
   };
   devState(kind).listeners.add(listener);
   function startRec(t){
-    state = 'rec'; rec = []; tStart = t; unlockAudio(); beep(880, 0.12); keepAwake(true); stateUI();
+    state = 'rec'; rec = []; tStart = t; $('clock').textContent = '30'; unlockAudio(); beep(880, 0.12); keepAwake(true); stateUI();
     let last = 30; timer = setInterval(() => {
       const left = Math.max(0, Math.ceil((HOLD_MS - (performance.now() - tStartWall)) / 1000));
       $('clock').textContent = left;
@@ -2379,19 +2382,21 @@ function renderHoldTest(cid, sid, testId){
   }
   let tStartWall = 0;
   let lowSince = null;
-  function stopRec(){ clearInterval(timer); timer = null; keepAwake(false); if (state === 'rec') state = 'cool'; lowSince = null; rest = []; $('clock').textContent = '30'; }
+  function stopRec(){ clearInterval(timer); timer = null; keepAwake(false); if (state === 'rec') state = 'cool'; lowSince = null; rest = []; }
+  const arm = () => { state = 'cool'; lowSince = null; rest = []; $('clock').textContent = '30'; stateUI(); };
   function finish(){
     if (state !== 'rec') return;
-    const recs = rec.slice(); stopRec(); beep(520, 0.35);
+    const recs = rec.slice(); stopRec(); beep(520, 0.35); $('clock').textContent = '0';
     const put = (k, series) => { const m = holdMetrics(series); if (m) data[k] = m; return m; };
     let ok;
     if (both){ const a = put('L', recs.map(p => ({t:p.t, v:p.l}))), b = put('R', recs.map(p => ({t:p.t, v:p.r}))); ok = a || b; }
     else ok = put(side, recs.map(p => ({t:p.t, v:p.v})));
-    if (!ok){ stateUI('That hold was too short to use – start again when ready.'); return; }
-    dirty = true; renderResult(); stateUI(`Hold saved. ${sided && side === 'L' ? 'Rest at least 2 minutes, then press Next for the right side.' : 'Press Next when ready.'}`);
+    if (!ok){ arm(); stateUI('That hold was too short to use – start again when ready.'); return; }
+    state = 'done'; dirty = true; renderResult(); stateUI(`Hold saved. ${sided && side === 'L' ? 'Rest at least 2 minutes, then press Next for the right side.' : 'Press Next when ready.'}`);
   }
   $('stopEarly').onclick = () => finish();
-  $('cancelRec').onclick = () => { stopRec(); drawChart([]); stateUI('Hold cancelled.'); };
+  $('cancelRec').onclick = () => { stopRec(); arm(); showSaved(); stateUI('Hold cancelled – start again when ready.'); };
+  $('redo').onclick = () => { arm(); drawChart([]); };
 
   function drawChart(series){
     const cv = $('stChart'); if (!cv) return;
@@ -2418,7 +2423,7 @@ function renderHoldTest(cid, sid, testId){
       : '<p class="empty">No hold yet.</p>';
     showSaved(); nextUI();
   }
-  function setSide(k){ side = k; stopRec(); if ($('liveLab')) $('liveLab').textContent = k === 'L' ? 'Left' : 'Right';
+  function setSide(k){ side = k; stopRec(); if (data[k]){ state = 'done'; $('clock').textContent = '0'; } else arm(); if ($('liveLab')) $('liveLab').textContent = k === 'L' ? 'Left' : 'Right';
     app.querySelectorAll('[data-side]').forEach(b => { b.classList.toggle('on', b.dataset.side === k); b.setAttribute('aria-selected', b.dataset.side === k); });
     renderResult(); stateUI(); }
   app.querySelectorAll('[data-side]').forEach(b => b.onclick = () => { if (state !== 'rec') setSide(b.dataset.side); });
@@ -2440,7 +2445,7 @@ function renderHoldTest(cid, sid, testId){
   cleanup = () => { devState(kind).listeners.delete(listener); stopRec(); };
 
   devUI();
-  if (sided) setSide(data.L && !data.R ? 'R' : 'L'); else { renderResult(); stateUI(); }
+  if (sided) setSide(data.L && !data.R ? 'R' : 'L'); else { if (done()){ state = 'done'; $('clock').textContent = '0'; } else arm(); renderResult(); stateUI(); }
 }
 
 /* ---- McGill trunk runner (stopwatch) ---- */
