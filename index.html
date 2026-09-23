@@ -1505,6 +1505,9 @@ function onDevData(kind, dv){
   st.listeners.forEach(fn => fn(s));
 }
 const DYNO_SERVICE = 0xffe0, DYNO_DATA = 0xffe1, DYNO_IDS = 'bep_dyno_ids';
+/* Names of dynos connected before, so the normal list can find them even if they don't announce the force service */
+const DYNO_NAMES = 'bep_dyno_names';
+const savedDynoNames = () => { try { return JSON.parse(localStorage.getItem(DYNO_NAMES)) || {}; } catch(e){ return {}; } };
 const savedDynoIds = () => { try { return JSON.parse(localStorage.getItem(DYNO_IDS)) || {}; } catch(e){ return {}; } };
 function forgetDev(kind){
   const st = devState(kind); st.device = null; st.char = null;
@@ -1523,9 +1526,13 @@ async function connectDev(kind, showAll = false){
     }
     // Otherwise ask, matching on the force-data service rather than any device name
     // "Show all" lists every Bluetooth device, for a dyno that doesn't announce its force service
-    if (!st.device) st.device = await navigator.bluetooth.requestDevice(showAll
-      ? {acceptAllDevices:true, optionalServices:[DYNO_SERVICE, 'battery_service']}
-      : {filters:[{services:[DYNO_SERVICE]}], optionalServices:['battery_service']});
+    if (!st.device){
+      const names = [...new Set(Object.values(savedDynoNames()).filter(n => typeof n === 'string' && n && n !== '*'))];
+      const noName = savedDynoNames()[kind] === '*';
+      st.device = await navigator.bluetooth.requestDevice(showAll || noName
+        ? {acceptAllDevices:true, optionalServices:[DYNO_SERVICE, 'battery_service']}
+        : {filters:[{services:[DYNO_SERVICE]}, ...names.map(name => ({name}))], optionalServices:[DYNO_SERVICE, 'battery_service']});
+    }
     st.device.addEventListener('gattserverdisconnected', () => st.listeners.forEach(fn => fn(null)));
     try { localStorage.setItem(DYNO_IDS, JSON.stringify({...savedDynoIds(), [kind]: st.device.id})); } catch(e){}
   }
@@ -1539,6 +1546,7 @@ async function connectDev(kind, showAll = false){
     if (remembered){ const err = new Error('The dyno used last time didn’t respond. Wake it (press its button), then press Connect again to pick it from the list.'); err.name = 'RetryError'; throw err; }
     throw new Error(/service/i.test(e.message) ? 'That device isn’t a dyno. Press Connect and choose the dyno.' : e.message);
   }
+  try { localStorage.setItem(DYNO_NAMES, JSON.stringify({...savedDynoNames(), [kind]: st.device.name || '*'})); } catch(e){}
   if (!ch._bep){ ch._bep = true; ch.addEventListener('characteristicvaluechanged', e => onDevData(kind, e.target.value)); }
   await ch.startNotifications();
   st.char = ch;
