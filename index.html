@@ -2337,6 +2337,7 @@ function renderHoldTest(cid, sid, testId){
     $('stopEarly').hidden = $('cancelRec').hidden = state !== 'rec';
     el.textContent = msg || (!devConnected(kind) ? 'Connect the dyno to start.'
       : state === 'rec' ? 'Recording – keep pushing as hard as possible…'
+      : state === 'cool' ? 'Time’s up – the client can relax.'
       : `${done() ? 'Hold recorded. To redo it, start again whenever the client is ready' : 'Ready – the hold starts when the client pushes'}${sided ? ` (${side === 'L' ? 'left' : 'right'} side)` : ''}.`);
   }
   const total = sm => both ? sm.l + sm.r : sm.v;
@@ -2345,6 +2346,12 @@ function renderHoldTest(cid, sid, testId){
     if (!sm){ state = 'rest'; rest = []; devUI(); return; }
     const fmt = v => Math.max(0, v).toFixed(1);
     if (both){ $('liveL').textContent = fmt(sm.l - base.l); $('liveR').textContent = fmt(sm.r - base.r); } else $('liveV').textContent = fmt(sm.v - base.v);
+    if (state === 'cool'){
+      // after a hold: wait until the client has let go for a second before a new hold can start
+      if (total(sm) - total(base) < 1.5){ if (lowSince == null) lowSince = sm.t; else if (sm.t - lowSince > 1000){ state = 'rest'; rest = []; stateUI(); } }
+      else lowSince = null;
+      return;
+    }
     if (state === 'rest'){
       rest.push(sm); while (rest.length && sm.t - rest[0].t > 1500) rest.shift();
       const b = both ? {l:med(rest.map(x => x.l)), r:med(rest.map(x => x.r))} : {v:med(rest.map(x => x.v))};
@@ -2371,7 +2378,8 @@ function renderHoldTest(cid, sid, testId){
     tStartWall = performance.now();
   }
   let tStartWall = 0;
-  function stopRec(){ clearInterval(timer); timer = null; keepAwake(false); state = 'rest'; rest = []; $('clock').textContent = '30'; }
+  let lowSince = null;
+  function stopRec(){ clearInterval(timer); timer = null; keepAwake(false); if (state === 'rec') state = 'cool'; lowSince = null; rest = []; $('clock').textContent = '30'; }
   function finish(){
     if (state !== 'rec') return;
     const recs = rec.slice(); stopRec(); beep(520, 0.35);
