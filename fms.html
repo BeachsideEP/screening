@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Movement screen">
+<meta name="theme-color" content="#0E2233">
+<title>Movement screen – Beachside EP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#13324A; --ink-2:#4F6677; --bg:#EEF3F2; --surface:#FFFFFF; --line:#D3DEDC;
+  --tide:#1B7A78; --tide-press:#15605E; --on-tide:#FFFFFF;
+  --stage:#0E2233; --left:#3DD6C6; --right:#F5B841; --centre:#E8EEF0;
+  --good:#2E7D4F; --warn:#A86A12; --bad:#B23A2A;
+  --s0:#B23A2A; --s1:#C27A12; --s2:#1B7A78; --s3:#2E7D4F;
+  --radius:12px;
+  --font:"Atkinson Hyperlegible", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --ink:#E6EEF0; --ink-2:#9FB3BD; --bg:#0F1D27; --surface:#162834; --line:#294150;
+    --tide:#2A9D98; --tide-press:#23857F; --good:#5DBB82; --warn:#E0A443; --bad:#E0715F;
+    --s0:#E0715F; --s1:#E0A443; --s2:#2A9D98; --s3:#5DBB82; }
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:18px;line-height:1.45;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3{line-height:1.15;margin:0}
+h1{font-size:2.1rem;letter-spacing:-0.01em}
+h2{font-size:1.25rem;margin-bottom:.75rem}
+p{margin:0}
+:focus-visible{outline:3px solid var(--tide);outline-offset:2px}
+
+/* Buttons */
+.btn{appearance:none;border:0;border-radius:var(--radius);min-height:56px;padding:0 1.25rem;font-weight:700;font-size:1.05rem;
+  background:var(--tide);color:var(--on-tide);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;text-decoration:none}
+.btn:active{background:var(--tide-press)}
+.btn[disabled]{opacity:.45}
+.btn.quiet{background:transparent;color:var(--tide);box-shadow:inset 0 0 0 2px var(--tide)}
+.btn.quiet:active{background:rgba(27,122,120,.1)}
+.btn.small{min-height:44px;font-size:.95rem;padding:0 1rem}
+.btn.danger{background:transparent;color:var(--bad);box-shadow:none;padding:0}
+.btn.wide{width:100%}
+.link{appearance:none;background:none;border:0;color:var(--tide);font-weight:700;padding:.5rem 0;cursor:pointer;min-height:44px}
+
+/* Pages */
+.page{max-width:780px;margin:0 auto;padding:2rem 1.5rem 4rem}
+.page-head{margin-bottom:2rem}
+.brand{color:var(--ink-2);font-size:1rem;margin-bottom:.35rem}
+.lede{color:var(--ink-2);margin-top:.6rem;max-width:60ch}
+section{margin-top:2.25rem}
+.list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.list > li{border-bottom:1px solid var(--line)}
+.row-btn{appearance:none;background:none;border:0;width:100%;text-align:left;padding:1rem .25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;cursor:pointer;min-height:64px}
+.row-btn:active{background:rgba(27,122,120,.07)}
+.row-title{font-weight:700;font-size:1.1rem}
+.row-meta{color:var(--ink-2);font-size:.95rem}
+.empty{color:var(--ink-2);padding:1rem 0}
+.field{display:flex;flex-direction:column;gap:.35rem;flex:1}
+.field label{font-size:.95rem;color:var(--ink-2)}
+.field input,.field textarea,.search{border:2px solid var(--line);background:var(--surface);border-radius:var(--radius);min-height:52px;padding:.6rem .85rem;width:100%}
+.field input:focus,.field textarea:focus,.search:focus{border-color:var(--tide);outline:none}
+.form-row{display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap}
+.form-row .field.age{flex:0 0 110px}
+.search{margin-bottom:.5rem}
+.note{color:var(--ink-2);font-size:.95rem;margin-bottom:1rem;max-width:62ch}
+.btn-row{display:flex;gap:.75rem;flex-wrap:wrap}
+.top-nav{margin-bottom:1rem}
+
+/* Client history */
+.hist{width:100%;border-collapse:collapse;font-size:1rem}
+.hist th{text-align:left;color:var(--ink-2);font-weight:400;padding:.5rem .4rem;border-bottom:2px solid var(--line)}
+.hist td{padding:.85rem .4rem;border-bottom:1px solid var(--line)}
+.hist tr.click{cursor:pointer}
+.hist tr.click:active td{background:rgba(27,122,120,.07)}
+.hist td.num,.hist th.num{text-align:center}
+.table-wrap{overflow-x:auto}
+.tag{display:inline-block;font-size:.85rem;color:var(--warn);font-weight:700}
+
+/* Score */
+.score{display:inline-flex;align-items:center;justify-content:center;min-width:2.4em;height:2.4em;border-radius:50%;font-weight:700;color:#fff;font-size:1rem}
+.score.s0{background:var(--s0)}.score.s1{background:var(--s1)}.score.s2{background:var(--s2)}.score.s3{background:var(--s3)}
+.score.none{background:transparent;color:var(--ink-2);box-shadow:inset 0 0 0 2px var(--line)}
+.overall{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;padding:1.25rem 0 1.5rem;border-bottom:2px solid var(--ink)}
+.overall .pct{font-size:4.5rem;font-weight:700;line-height:1;letter-spacing:-0.02em}
+.overall .of{color:var(--ink-2)}
+
+/* Session test rows */
+.test-row{display:grid;grid-template-columns:1fr auto;gap:.5rem 1.25rem;padding:1.25rem 0;border-bottom:1px solid var(--line)}
+.test-row h3{font-size:1.2rem}
+.test-row .view{color:var(--ink-2);font-size:.95rem}
+.test-row .detail{grid-column:1 / -1;display:flex;flex-direction:column;gap:.2rem}
+.test-row .flag{color:var(--warn);font-weight:700;font-size:.95rem}
+.test-row .flag.bad{color:var(--bad)}
+.test-row .controls{grid-column:1 / -1;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-top:.5rem}
+.test-row select{border:2px solid var(--line);background:var(--surface);border-radius:var(--radius);min-height:44px;padding:0 .6rem}
+.score-slot{display:flex;flex-direction:column;align-items:center;gap:.2rem}
+.score-slot small{color:var(--ink-2);font-size:.8rem}
+
+/* Test screen */
+.test{display:grid;grid-template-columns:minmax(0,1fr) 360px;height:100%;background:var(--stage);color:var(--centre)}
+.stage{position:relative;overflow:hidden;background:var(--stage)}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.stage.mirror video,.stage.mirror canvas{transform:scaleX(-1)}
+.stage-top{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:flex-start;padding:1rem;gap:1rem;pointer-events:none}
+.stage-top > *{pointer-events:auto}
+.stage-btn{appearance:none;border:0;border-radius:999px;min-height:48px;padding:0 1.1rem;background:rgba(14,34,51,.72);color:#fff;font-weight:700;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);cursor:pointer}
+.legend{position:absolute;left:1rem;bottom:1rem;display:flex;gap:1rem;background:rgba(14,34,51,.72);padding:.5rem .85rem;border-radius:999px;font-size:.9rem;color:#fff}
+.legend i{display:inline-block;width:.9em;height:.9em;border-radius:50%;margin-right:.4em;vertical-align:-.1em}
+.check{position:absolute;left:50%;transform:translateX(-50%);bottom:1rem;padding:.55rem 1rem;border-radius:999px;font-weight:700;font-size:.95rem;background:rgba(178,58,42,.9);color:#fff;white-space:nowrap}
+.check.ok{background:rgba(46,125,79,.9)}
+.check[hidden]{display:none}
+.count{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:min(34vw,16rem);font-weight:700;color:#fff;text-shadow:0 4px 30px rgba(0,0,0,.5);pointer-events:none}
+.count[hidden]{display:none}
+.loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;text-align:center;padding:2rem;color:#fff}
+.loading[hidden]{display:none}
+.loading p{max-width:40ch}
+
+.rail{background:var(--surface);color:var(--ink);display:flex;flex-direction:column;padding:1.5rem 1.25rem;gap:1.25rem;overflow-y:auto}
+.rail h1{font-size:1.6rem}
+.rail .view{color:var(--ink-2);margin-top:.25rem}
+.trial-label{font-weight:700;color:var(--tide);font-size:1.05rem}
+.readout{border-top:2px solid var(--ink);border-bottom:1px solid var(--line);padding:.75rem 0 1rem}
+.readout .big{font-size:4.25rem;font-weight:700;line-height:1.05;letter-spacing:-0.02em;min-height:1.05em}
+.readout .sub{color:var(--ink-2);min-height:1.45em}
+.steps{margin:0;padding-left:1.3rem;color:var(--ink-2);font-size:1rem;display:flex;flex-direction:column;gap:.45rem}
+.actions{display:flex;flex-direction:column;gap:.65rem;margin-top:auto}
+.trial-result{background:var(--bg);border-radius:var(--radius);padding:1rem;display:flex;flex-direction:column;gap:.3rem}
+.trial-result strong{font-size:1.1rem}
+
+@media (max-width: 900px), (orientation: portrait){
+  .test{grid-template-columns:1fr;grid-template-rows:minmax(300px,58%) auto;height:auto;min-height:100%}
+  .stage{min-height:58vh}
+  .readout .big{font-size:3.25rem}
+}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:calc(1.5rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:.8rem 1.2rem;border-radius:var(--radius);font-weight:700;z-index:50;max-width:90vw}
+.toast.bad{background:var(--bad);color:#fff}
+@media (prefers-reduced-motion: no-preference){ .toast{animation:rise .2s ease-out} @keyframes rise{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+/* ============================================================
+   Beachside EP – Movement screen prototype
+   Tests: 5x sit-to-stand, single-leg balance L/R, overhead squat
+   Data: localStorage on this device only (key: bep_fms_v1)
+   Tracking: MediaPipe Pose Landmarker, runs on-device
+   ============================================================ */
+
+const MP_VER = '0.10.35';
+const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/vision_bundle.mjs`;
+const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/wasm`;
+const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
+const KEY = 'bep_fms_v1';
+const BAL_MAX = 30;
+
+const app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const fmtDate = iso => new Date(iso).toLocaleDateString('en-AU', {day:'numeric', month:'short', year:'numeric'});
+const ema = (prev, v, a) => prev == null ? v : prev + a * (v - prev);
+
+/* ---------- Storage ---------- */
+function loadDB(){
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && Array.isArray(d.clients)) return d; } catch(e) {}
+  return {version:1, clients:[]};
+}
+let db = loadDB();
+function saveDB(){
+  try { localStorage.setItem(KEY, JSON.stringify(db)); return true; }
+  catch(e){ toast('Couldn’t save on this iPad – storage may be full. Export a backup.', true); return false; }
+}
+try { navigator.storage?.persist?.(); } catch(e) {}
+const getClient = id => db.clients.find(c => c.id === id);
+const getSession = (c, sid) => c?.sessions.find(s => s.id === sid);
+
+function toast(msg, bad=false){
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'toast' + (bad ? ' bad' : '');
+  t.setAttribute('role', 'status');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+/* ---------- Tests, norms and scoring ---------- */
+const TESTS = [
+  { id:'sts', name:'5× sit-to-stand', view:'side', viewText:'Client side-on to the camera', trials:[null],
+    steps:[
+      'Chair against a wall, seat at about knee height.',
+      'Client sits with arms crossed on the chest, feet flat.',
+      'Tap Start. After the countdown they stand up fully and sit down 5 times, as fast as is safe.',
+      'Timing stops automatically at the 5th full stand.'
+    ]},
+  { id:'balance', name:'Single-leg balance', view:'front', viewText:'Client facing the camera', trials:['L','R'],
+    steps:[
+      'Client faces the camera, hands on hips, eyes open.',
+      'Tap Start. After the countdown they lift the opposite foot.',
+      'Timing starts when the foot leaves the floor and stops when it touches down, or at 30 seconds.'
+    ]},
+  { id:'squat', name:'Overhead squat', view:'side', viewText:'Client side-on to the camera', trials:[null],
+    steps:[
+      'Client stands side-on, feet shoulder-width, dowel held overhead with straight arms.',
+      'Stand still during the countdown so the app can record their standing position.',
+      'After the countdown they do 3 slow, deep squats. The best rep is scored.',
+      'Knee alignment needs a front view and isn’t scored in this version.'
+    ]}
+];
+const testById = id => TESTS.find(t => t.id === id);
+
+// 5xSTS: Bohannon 2006 age reference values. Under 60 is a provisional target.
+function stsNorm(age){ if (age >= 80) return 14.8; if (age >= 70) return 12.6; if (age >= 60) return 11.4; return 10.0; }
+// Single-leg stance, eyes open: Springer et al. 2007 age means.
+function balNorm(age){ if (age >= 80) return 6.2; if (age >= 70) return 15.0; if (age >= 60) return 26.9; if (age >= 50) return 36.0; if (age >= 40) return 40.4; return 43.5; }
+const balTarget = age => Math.min(balNorm(age), BAL_MAX);
+
+function balSideScore(x, age){
+  if (!x) return null;
+  if (x.unable || !x.time) return 0;
+  const tgt = balTarget(age);
+  if (x.time >= tgt - 0.05) return 3;
+  if (x.time >= tgt / 2) return 2;
+  return 1;
+}
+function autoScore(testId, r, age){
+  if (!r) return null;
+  if (testId === 'sts'){
+    if (r.unable || !r.reps) return 0;
+    if (!r.completed) return 1;
+    if (r.time <= stsNorm(age)) return 3;
+    if (r.time <= 15) return 2;
+    return 1;
+  }
+  if (testId === 'balance'){
+    const L = balSideScore(r.L, age), R = balSideScore(r.R, age);
+    if (L == null || R == null) return null;
+    return Math.min(L, R);
+  }
+  if (testId === 'squat'){
+    if (r.unable || !r.best) return 0;
+    const f = r.best.faults.length;
+    return f === 0 ? 3 : f === 1 ? 2 : 1;
+  }
+  return null;
+}
+const finalScore = (testId, r, age) => (r && r.override != null) ? r.override : autoScore(testId, r, age);
+
+function overall(session, age){
+  let sum = 0, n = 0;
+  for (const t of TESTS){ const s = finalScore(t.id, session.results[t.id], age); if (s != null){ sum += s; n++; } }
+  return n ? {pct: Math.round(sum / (n * 3) * 100), n} : null;
+}
+
+function summarise(testId, r, age){
+  const lines = [], flags = [];
+  if (!r) return {lines, flags};
+  if (testId === 'sts'){
+    if (r.unable) lines.push('Unable to complete');
+    else lines.push(`${r.time.toFixed(1)} s for ${r.reps} of 5 stands`);
+    lines.push(`Age target ${stsNorm(age)} s or faster`);
+    if (!r.unable && r.completed && r.time > 15) flags.push({t:'Slower than 15 s – linked with higher falls risk', bad:true});
+    if (age < 60) flags.push({t:'No published norm under 60 – using 10 s as a provisional target'});
+  }
+  if (testId === 'balance'){
+    for (const side of ['L','R']){
+      const x = r[side]; const nm = side === 'L' ? 'Left leg' : 'Right leg';
+      if (!x) { lines.push(`${nm}: not done`); continue; }
+      lines.push(x.unable ? `${nm}: unable` : `${nm}: ${x.time.toFixed(1)} s, sway ${x.sway}, side-to-side range ${x.range}%`);
+    }
+    lines.push(`Age target ${balTarget(age)} s`);
+    if (r.L && r.R){
+      const a = r.L.time || 0, b = r.R.time || 0, mx = Math.max(a, b);
+      if (mx > 0 && Math.abs(a - b) / mx > 0.25) flags.push({t:`Left/right difference of ${Math.round(Math.abs(a - b) / mx * 100)}%`});
+    }
+  }
+  if (testId === 'squat'){
+    if (r.unable || !r.best) lines.push('No squats recorded');
+    else {
+      const b = r.best;
+      lines.push(`Best of ${r.reps.length} rep${r.reps.length === 1 ? '' : 's'}: ${b.faults.length ? b.faults.length + ' fault' + (b.faults.length > 1 ? 's' : '') : 'no faults'}`);
+      lines.push(`Thigh ${b.thigh <= 0 ? Math.abs(b.thigh) + '° below' : b.thigh + '° above'} parallel, trunk lean ${b.trunk}°, shin angle ${b.tibia}°, arm drift ${Math.max(0, b.arm)}°`);
+      b.faults.forEach(f => flags.push({t:f}));
+    }
+  }
+  return {lines, flags};
+}
+
+/* ---------- Geometry ---------- */
+const L_IDX = {sh:11, el:13, wr:15, hip:23, knee:25, ank:27, heel:29, toe:31};
+const R_IDX = {sh:12, el:14, wr:16, hip:24, knee:26, ank:28, heel:30, toe:32};
+function pt(lm, i){
+  const W = els.video.videoWidth || 1, H = els.video.videoHeight || 1, p = lm[i];
+  return {x: p.x * W, y: p.y * H, v: p.visibility ?? 1};
+}
+function ang(a, b, c){
+  const v1x = a.x - b.x, v1y = a.y - b.y, v2x = c.x - b.x, v2y = c.y - b.y;
+  const d = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
+  if (!d) return NaN;
+  return Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / d))) * 180 / Math.PI;
+}
+// Angle of the segment bottom→top away from vertical, in degrees (0 = upright)
+const fromVertical = (top, bottom) => Math.atan2(Math.abs(top.x - bottom.x), bottom.y - top.y) * 180 / Math.PI;
+const sideVis = (lm, S) => ['sh','hip','knee','ank'].reduce((a, k) => a + (lm[S[k]].visibility ?? 0), 0) / 4;
+const bestSide = lm => sideVis(lm, L_IDX) >= sideVis(lm, R_IDX) ? L_IDX : R_IDX;
+
+function bodyCheck(lm, view){
+  if (!lm) return {ok:false, msg:'No one in view'};
+  const vis = i => (lm[i].visibility ?? 0) > 0.5;
+  const inF = i => lm[i].x > 0.01 && lm[i].x < 0.99 && lm[i].y > 0.01 && lm[i].y < 0.985;
+  const S = bestSide(lm);
+  const chain = view === 'front' ? [11,12,23,24,25,26,27,28] : [S.sh, S.hip, S.knee, S.ank];
+  const ankles = view === 'front' ? [27,28] : [S.ank];
+  if (ankles.some(i => !inF(i))) return {ok:false, msg:'Feet not in view – move the iPad back'};
+  if (lm[0].y < 0.01 || !inF(view === 'front' ? 11 : S.sh)) return {ok:false, msg:'Head cut off – move the iPad back'};
+  if (chain.some(i => !vis(i))) return {ok:false, msg:'Whole body needs to be in view'};
+  const lsh = pt(lm,11), rsh = pt(lm,12), hip = pt(lm, S.hip), sh = pt(lm, S.sh);
+  const ratio = Math.hypot(lsh.x - rsh.x, lsh.y - rsh.y) / (Math.hypot(sh.x - hip.x, sh.y - hip.y) || 1);
+  if (view === 'side' && ratio > 0.55) return {ok:false, msg:'Turn the client side-on'};
+  if (view === 'front' && ratio < 0.45) return {ok:false, msg:'Turn the client to face the camera'};
+  return {ok:true, msg:'Whole body in view'};
+}
+
+/* ---------- Test controllers ---------- */
+function stsController(){
+  const st = {running:false, reps:0, standing:false, armed:false, t0:0, repTimes:[], k:null, time:null, S:null};
+  return {
+    begin(lm, t){ st.running = true; st.t0 = t; st.S = lm ? bestSide(lm) : L_IDX; },
+    frame(lm, t, api, phase){
+      if (phase !== 'run' || !lm) return;
+      const S = st.S || bestSide(lm);
+      const k = ang(pt(lm, S.hip), pt(lm, S.knee), pt(lm, S.ank));
+      const el = (t - st.t0) / 1000;
+      if (!isNaN(k)){
+        st.k = ema(st.k, k, 0.5);
+        if (st.k < 115){ st.armed = true; st.standing = false; }
+        if (st.armed && !st.standing && st.k > 155){
+          st.standing = true; st.reps++; st.repTimes.push(+el.toFixed(2)); api.beep();
+          if (st.reps >= 5){ st.time = el; api.finish(); return; }
+        }
+      }
+      api.live(`${el.toFixed(1)} s`, `${st.reps} of 5 stands`);
+    },
+    stop(t){ if (st.running && st.time == null) st.time = (t - st.t0) / 1000; st.running = false; },
+    result(){ return {time:+(st.time ?? 0).toFixed(2), reps:st.reps, completed:st.reps >= 5, repTimes:st.repTimes}; },
+    unable(){ return {time:0, reps:0, completed:false, repTimes:[], unable:true}; }
+  };
+}
+
+function balController(stance){
+  const liftI = stance === 'L' ? 28 : 27, standI = stance === 'L' ? 27 : 28, hipI = stance === 'L' ? 23 : 24;
+  const liftName = stance === 'L' ? 'right' : 'left', standName = stance === 'L' ? 'left' : 'right';
+  const st = {phase:'idle', tBegin:0, t0:null, tDown:null, time:null, path:0, prev:null, minX:Infinity, maxX:-Infinity, sw:null, cx:null, cy:null, unable:false};
+  return {
+    begin(lm, t){ st.phase = 'waitLift'; st.tBegin = t; },
+    frame(lm, t, api, phase){
+      if (phase !== 'run' || !lm) return;
+      const a = pt(lm, liftI), s = pt(lm, standI), h = pt(lm, hipI);
+      const leg = Math.hypot(h.x - s.x, h.y - s.y) || 1;
+      const lift = (s.y - a.y) / leg;
+      const lsh = pt(lm, 11), rsh = pt(lm, 12);
+      const mx = (lsh.x + rsh.x) / 2, my = (lsh.y + rsh.y) / 2, sw = Math.hypot(lsh.x - rsh.x, lsh.y - rsh.y) || 1;
+      if (st.phase === 'waitLift'){
+        api.live('0.0 s', `Lift the ${liftName} foot`);
+        if (lift > 0.06){ st.phase = 'hold'; st.t0 = t; st.sw = sw; st.cx = mx; st.cy = my; api.beep(); }
+        else if (t - st.tBegin > 15000){ st.unable = true; api.finish(); }
+        return;
+      }
+      if (st.phase === 'hold'){
+        st.cx = ema(st.cx, mx, 0.35); st.cy = ema(st.cy, my, 0.35);
+        const nx = st.cx / st.sw, ny = st.cy / st.sw;
+        if (st.prev) st.path += Math.hypot(nx - st.prev.x, ny - st.prev.y);
+        st.prev = {x:nx, y:ny}; st.minX = Math.min(st.minX, nx); st.maxX = Math.max(st.maxX, nx);
+        const el = (t - st.t0) / 1000;
+        if (lift < 0.03){
+          if (st.tDown == null) st.tDown = t;
+          else if (t - st.tDown > 250){ st.time = (st.tDown - st.t0) / 1000; api.beep(); api.finish(); return; }
+        } else st.tDown = null;
+        if (el >= BAL_MAX){ st.time = BAL_MAX; api.beep(); api.finish(); return; }
+        api.live(`${el.toFixed(1)} s`, `Standing on the ${standName} leg`);
+      }
+    },
+    stop(t){
+      if (st.phase === 'hold' && st.time == null) st.time = (t - st.t0) / 1000;
+      if (st.phase === 'waitLift') st.unable = true;
+      st.phase = 'done';
+    },
+    result(){
+      const time = +(st.time ?? 0).toFixed(1), dur = Math.max(time, 0.1);
+      return {time, unable: st.unable || time < 0.5,
+        sway: +((st.path / dur) * 100).toFixed(1),
+        range: isFinite(st.maxX) ? Math.round((st.maxX - st.minX) * 100) : 0};
+    },
+    unable(){ return {time:0, unable:true, sway:0, range:0}; }
+  };
+}
+
+function squatController(){
+  const st = {S:null, base:[], baseK:170, heel0:0, state:'up', reps:[], cur:null, k:null, facing:1};
+  function metrics(lm){
+    const S = st.S;
+    const sh = pt(lm,S.sh), hip = pt(lm,S.hip), kn = pt(lm,S.knee), an = pt(lm,S.ank), wr = pt(lm,S.wr), he = pt(lm,S.heel), to = pt(lm,S.toe);
+    const leg = Math.hypot(hip.x - an.x, hip.y - an.y) || 1;
+    return {
+      k: ang(hip, kn, an),
+      thigh: Math.atan2(kn.y - hip.y, Math.abs(kn.x - hip.x)) * 180 / Math.PI, // + means hip above knee
+      trunk: fromVertical(sh, hip),
+      tibia: fromVertical(kn, an),
+      arm: Math.atan2((wr.x - sh.x) * st.facing, sh.y - wr.y) * 180 / Math.PI, // + means wrists forward of shoulder
+      heel: (to.y - he.y) / leg
+    };
+  }
+  const median = arr => { const s = [...arr].sort((a,b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
+  return {
+    begin(lm, t){
+      if (lm && !st.S) st.S = bestSide(lm);
+      const ks = st.base.map(b => b.k).filter(v => !isNaN(v)).sort((a,b) => b - a);
+      if (ks.length) st.baseK = ks[Math.min(3, ks.length - 1)];
+      const hs = st.base.map(b => b.heel).filter(v => !isNaN(v));
+      if (hs.length) st.heel0 = median(hs);
+    },
+    frame(lm, t, api, phase){
+      if (!lm) return;
+      if (phase === 'setup' || phase === 'countdown'){
+        st.S = bestSide(lm);
+        const to = pt(lm, st.S.toe), he = pt(lm, st.S.heel);
+        st.facing = (to.x - he.x) >= 0 ? 1 : -1;
+        const m = metrics(lm);
+        st.base.push({k:m.k, heel:m.heel}); if (st.base.length > 45) st.base.shift();
+        return;
+      }
+      if (phase !== 'run') return;
+      const m = metrics(lm); if (isNaN(m.k)) return;
+      st.k = ema(st.k, m.k, 0.5);
+      if (st.state === 'up'){
+        if (st.k < st.baseK - 25){ st.state = 'down'; st.cur = {...m, kMin:st.k, heelMax:m.heel}; }
+      } else {
+        if (st.k < st.cur.kMin){ Object.assign(st.cur, m); st.cur.kMin = st.k; }
+        st.cur.heelMax = Math.max(st.cur.heelMax, m.heel);
+        if (st.k > st.baseK - 12){
+          const r = st.cur, faults = [];
+          if (r.thigh > 0) faults.push('Hips stayed above knee height');
+          if (r.trunk > r.tibia + 10) faults.push('Trunk leaned further forward than the shins');
+          if (r.arm > 25) faults.push('Arms or dowel drifted forward');
+          const heelLift = r.heelMax - st.heel0 > 0.04;
+          if (heelLift) faults.push('Heels lifted');
+          st.reps.push({knee:Math.round(r.kMin), thigh:Math.round(r.thigh), trunk:Math.round(r.trunk), tibia:Math.round(r.tibia), arm:Math.round(r.arm), heelLift, faults});
+          st.state = 'up'; st.cur = null; api.beep();
+          if (st.reps.length >= 3){ api.finish(); return; }
+        }
+      }
+      api.live(`${st.reps.length} of 3`, st.state === 'down' ? 'Going down…' : 'Standing – squat when ready');
+    },
+    stop(){},
+    result(){
+      const best = [...st.reps].sort((a,b) => a.faults.length - b.faults.length || a.thigh - b.thigh)[0] || null;
+      return {reps:st.reps, best, unable: st.reps.length === 0};
+    },
+    unable(){ return {reps:[], best:null, unable:true}; }
+  };
+}
+const makeController = (testId, trial) => testId === 'sts' ? stsController() : testId === 'balance' ? balController(trial) : squatController();
+
+/* ---------- Camera + pose engine ---------- */
+const els = {video: document.createElement('video'), canvas: document.createElement('canvas')};
+els.video.playsInline = true; els.video.muted = true; els.video.setAttribute('playsinline',''); els.video.setAttribute('muted','');
+let landmarker = null, stream = null, facing = 'user', loopOn = false, onPose = null, lastT = -1, wakeLock = null;
+
+async function initPose(){
+  if (landmarker) return;
+  const { PoseLandmarker, FilesetResolver } = await import(MP_URL);
+  const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+  const opts = d => ({baseOptions:{modelAssetPath:MODEL_URL, delegate:d}, runningMode:'VIDEO', numPoses:1,
+    minPoseDetectionConfidence:0.5, minPosePresenceConfidence:0.5, minTrackingConfidence:0.5});
+  try { landmarker = await PoseLandmarker.createFromOptions(fileset, opts('GPU')); }
+  catch(e){ landmarker = await PoseLandmarker.createFromOptions(fileset, opts('CPU')); }
+}
+async function startCamera(){
+  stopCamera();
+  stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:facing, width:{ideal:1280}, height:{ideal:720}}});
+  els.video.srcObject = stream;
+  await els.video.play();
+}
+function stopCamera(){
+  if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+  els.video.srcObject = null;
+}
+const COL = {L:'#3DD6C6', R:'#F5B841', C:'#E8EEF0'};
+const CONN = [[11,12,'C'],[23,24,'C'],[11,23,'L'],[12,24,'R'],[11,13,'L'],[13,15,'L'],[12,14,'R'],[14,16,'R'],
+  [23,25,'L'],[25,27,'L'],[27,29,'L'],[29,31,'L'],[27,31,'L'],[24,26,'R'],[26,28,'R'],[28,30,'R'],[30,32,'R'],[28,32,'R']];
+function draw(lm){
+  const c = els.canvas, v = els.video;
+  if (c.width !== v.videoWidth || c.height !== v.videoHeight){ c.width = v.videoWidth; c.height = v.videoHeight; }
+  const x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height);
+  if (!lm) return;
+  const W = c.width, H = c.height, lw = Math.max(3, W / 200);
+  x.lineCap = 'round';
+  for (const [a, b, s] of CONN){
+    const p = lm[a], q = lm[b];
+    if ((p.visibility ?? 1) < 0.3 || (q.visibility ?? 1) < 0.3) continue;
+    x.strokeStyle = COL[s]; x.lineWidth = lw;
+    x.beginPath(); x.moveTo(p.x * W, p.y * H); x.lineTo(q.x * W, q.y * H); x.stroke();
+  }
+  for (const i of [0,11,12,13,14,15,16,23,24,25,26,27,28]){
+    const p = lm[i]; if ((p.visibility ?? 1) < 0.3) continue;
+    x.fillStyle = i === 0 ? COL.C : (i % 2 ? COL.L : COL.R);
+    x.beginPath(); x.arc(p.x * W, p.y * H, lw * 1.5, 0, Math.PI * 2); x.fill();
+  }
+}
+function startLoop(){
+  if (loopOn) return; loopOn = true;
+  const tick = () => {
+    if (!loopOn) return;
+    const v = els.video;
+    if (landmarker && v.readyState >= 2 && v.currentTime !== lastT){
+      lastT = v.currentTime;
+      const now = performance.now();
+      let lm = null;
+      try { lm = landmarker.detectForVideo(v, now).landmarks?.[0] || null; } catch(e){ console.error(e); }
+      draw(lm);
+      if (onPose) onPose(lm, now);
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+function stopLoop(){ loopOn = false; onPose = null; }
+
+let actx = null;
+function unlockAudio(){ try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch(e){} }
+function beep(freq = 880, dur = 0.12){
+  if (!actx) return;
+  try {
+    const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur + 0.02);
+  } catch(e){}
+}
+async function keepAwake(on){
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+    if (!on && wakeLock){ await wakeLock.release(); wakeLock = null; }
+  } catch(e){ wakeLock = null; }
+}
+
+/* ---------- Routing ---------- */
+let cleanup = null;
+function go(fn, ...args){
+  if (cleanup){ const c = cleanup; cleanup = null; c(); }
+  window.scrollTo(0, 0);
+  fn(...args);
+}
+
+/* ---------- Home ---------- */
+function lastSummary(c){
+  const done = c.sessions.filter(s => s.status === 'complete');
+  const s = done[done.length - 1];
+  if (!s) return c.sessions.length ? 'Screen in progress' : 'No screens yet';
+  const o = overall(s, c.age);
+  return `Last screen ${fmtDate(s.date)}${o ? `, ${o.pct}%` : ''}`;
+}
+function renderHome(){
+  const clients = [...db.clients].sort((a,b) => a.name.localeCompare(b.name));
+  app.innerHTML = `
+  <main class="page">
+    <header class="page-head">
+      <p class="brand">Beachside Exercise Physiology</p>
+      <h1>Movement screen</h1>
+      <p class="lede">Camera-scored 5× sit-to-stand, single-leg balance and overhead squat. Prototype: results are saved on this iPad only.</p>
+    </header>
+    <section>
+      <h2>Clients</h2>
+      ${clients.length > 6 ? `<input class="search" id="q" type="search" placeholder="Find a client" aria-label="Find a client">` : ''}
+      ${clients.length ? `<ul class="list" id="clist">${clients.map(c => `
+        <li data-name="${esc(c.name.toLowerCase())}"><button class="row-btn" data-id="${c.id}">
+          <span><span class="row-title">${esc(c.name)}</span><br><span class="row-meta">Age ${c.age}. ${esc(lastSummary(c))}</span></span>
+          <span aria-hidden="true" class="row-meta">Open</span>
+        </button></li>`).join('')}</ul>`
+      : `<p class="empty">No clients yet. Add one below to start their first screen.</p>`}
+    </section>
+    <section>
+      <h2>Add a client</h2>
+      <div class="form-row">
+        <div class="field"><label for="nName">Name</label><input id="nName" autocomplete="off"></div>
+        <div class="field age"><label for="nAge">Age</label><input id="nAge" type="number" inputmode="numeric" min="5" max="110"></div>
+        <button class="btn" id="add">Add client</button>
+      </div>
+      <p class="note" style="margin-top:.6rem">Age sets the targets for sit-to-stand and balance.</p>
+    </section>
+    <section>
+      <h2>Backup</h2>
+      <p class="note">Results live only in this iPad’s browser. Clearing Safari data or deleting the home-screen app erases them, so export a backup regularly.</p>
+      <div class="btn-row">
+        <button class="btn quiet" id="exp">Export backup</button>
+        <label class="btn quiet" for="imp">Import backup</label>
+        <input id="imp" type="file" accept="application/json,.json" hidden>
+      </div>
+    </section>
+  </main>`;
+  app.querySelectorAll('.row-btn').forEach(b => b.onclick = () => go(renderClient, b.dataset.id));
+  const q = document.getElementById('q');
+  if (q) q.oninput = () => { const v = q.value.trim().toLowerCase(); app.querySelectorAll('#clist li').forEach(li => li.hidden = !li.dataset.name.includes(v)); };
+  document.getElementById('add').onclick = () => {
+    const name = document.getElementById('nName').value.trim();
+    const age = parseInt(document.getElementById('nAge').value, 10);
+    if (!name){ toast('Enter the client’s name.', true); return; }
+    if (!(age >= 5 && age <= 110)){ toast('Enter an age between 5 and 110.', true); return; }
+    const c = {id:uid(), name, age, created:new Date().toISOString(), sessions:[]};
+    db.clients.push(c); if (saveDB()) go(renderClient, c.id);
+  };
+  document.getElementById('exp').onclick = exportBackup;
+  document.getElementById('imp').onchange = e => importBackup(e.target.files[0]);
+}
+function exportBackup(){
+  const blob = new Blob([JSON.stringify(db, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bep-movement-screen-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function importBackup(file){
+  if (!file) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const d = JSON.parse(rd.result);
+      if (!d || !Array.isArray(d.clients)) throw 0;
+      if (!confirm(`Import ${d.clients.length} client${d.clients.length === 1 ? '' : 's'}? Clients already on this iPad with the same record are replaced by the backup copy.`)) return;
+      for (const c of d.clients){
+        const i = db.clients.findIndex(x => x.id === c.id);
+        if (i >= 0) db.clients[i] = c; else db.clients.push(c);
+      }
+      if (saveDB()){ toast('Backup imported.'); go(renderHome); }
+    } catch(e){ toast('That file isn’t a movement screen backup.', true); }
+  };
+  rd.readAsText(file);
+}
+
+/* ---------- Client ---------- */
+function renderClient(cid){
+  const c = getClient(cid); if (!c) return go(renderHome);
+  const sessions = [...c.sessions].sort((a,b) => b.date.localeCompare(a.date));
+  const cell = (s, id) => { const v = finalScore(id, s.results[id], c.age); return v == null ? '–' : `<span class="score s${v}">${v}</span>`; };
+  app.innerHTML = `
+  <main class="page">
+    <nav class="top-nav"><button class="link" id="back">All clients</button></nav>
+    <header class="page-head">
+      <h1>${esc(c.name)}</h1>
+      <p class="lede">Age ${c.age} <button class="link" id="age" style="margin-left:.5rem">Change age</button></p>
+    </header>
+    <button class="btn" id="new">Start new screen</button>
+    <section>
+      <h2>Screens</h2>
+      ${sessions.length ? `<div class="table-wrap"><table class="hist">
+        <thead><tr><th>Date</th>${TESTS.map(t => `<th class="num">${esc(t.name)}</th>`).join('')}<th class="num">Overall</th></tr></thead>
+        <tbody>${sessions.map(s => { const o = overall(s, c.age); return `
+          <tr class="click" data-sid="${s.id}" tabindex="0">
+            <td>${fmtDate(s.date)}${s.status !== 'complete' ? '<br><span class="tag">In progress</span>' : ''}</td>
+            ${TESTS.map(t => `<td class="num">${cell(s, t.id)}</td>`).join('')}
+            <td class="num"><strong>${o ? o.pct + '%' : '–'}</strong></td>
+          </tr>`; }).join('')}</tbody></table></div>`
+      : `<p class="empty">No screens yet. Start one above.</p>`}
+    </section>
+    <section><button class="btn danger" id="del">Delete client and all their screens</button></section>
+  </main>`;
+  document.getElementById('back').onclick = () => go(renderHome);
+  document.getElementById('age').onclick = () => {
+    const v = parseInt(prompt('New age', c.age), 10);
+    if (v >= 5 && v <= 110){ c.age = v; saveDB(); go(renderClient, cid); }
+  };
+  document.getElementById('new').onclick = () => {
+    const s = {id:uid(), date:new Date().toISOString(), status:'in-progress', results:{}, notes:''};
+    c.sessions.push(s); if (saveDB()) go(renderSession, cid, s.id);
+  };
+  app.querySelectorAll('tr.click').forEach(tr => {
+    tr.onclick = () => go(renderSession, cid, tr.dataset.sid);
+    tr.onkeydown = e => { if (e.key === 'Enter') tr.onclick(); };
+  });
+  document.getElementById('del').onclick = () => {
+    if (!confirm(`Delete ${c.name} and all their screens from this iPad? This can’t be undone.`)) return;
+    db.clients = db.clients.filter(x => x.id !== cid); saveDB(); go(renderHome);
+  };
+}
+
+/* ---------- Session (results) ---------- */
+function renderSession(cid, sid){
+  const c = getClient(cid), s = getSession(c, sid);
+  if (!s) return go(renderClient, cid);
+  const o = overall(s, c.age);
+  app.innerHTML = `
+  <main class="page">
+    <nav class="top-nav"><button class="link" id="back">Back to ${esc(c.name)}</button></nav>
+    <header class="page-head">
+      <h1>Screen on ${fmtDate(s.date)}</h1>
+      <p class="lede">${esc(c.name)}, age ${c.age}. Each test is scored 0–3; you can override any score.</p>
+    </header>
+    <div class="overall">
+      <span class="pct">${o ? o.pct + '%' : '–'}</span>
+      <span class="of">${o ? `overall, from ${o.n} of ${TESTS.length} tests` : 'Run a test to see a score'}</span>
+    </div>
+    ${TESTS.map(t => {
+      const r = s.results[t.id], auto = autoScore(t.id, r, c.age), fin = finalScore(t.id, r, c.age);
+      const {lines, flags} = summarise(t.id, r, c.age);
+      return `<div class="test-row">
+        <div><h3>${esc(t.name)}</h3><p class="view">${esc(t.viewText)}</p></div>
+        <div class="score-slot">${fin == null ? '<span class="score none">–</span>' : `<span class="score s${fin}">${fin}</span>`}${r && r.override != null ? '<small>Adjusted</small>' : ''}</div>
+        ${r ? `<div class="detail">${lines.map(l => `<p>${esc(l)}</p>`).join('')}${flags.map(f => `<p class="flag${f.bad ? ' bad' : ''}">${esc(f.t)}</p>`).join('')}</div>` : ''}
+        <div class="controls">
+          <button class="btn small${r ? ' quiet' : ''}" data-run="${t.id}">${r ? 'Redo test' : 'Run test'}</button>
+          ${r && auto != null ? `<label>Score <select data-ov="${t.id}" aria-label="Score for ${esc(t.name)}">
+            <option value="">Auto (${auto})</option>${[3,2,1,0].map(n => `<option value="${n}"${r.override === n ? ' selected' : ''}>${n}</option>`).join('')}
+          </select></label>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+    <section>
+      <div class="field"><label for="notes">Notes</label><textarea id="notes" rows="4" placeholder="Pain, aids used, anything the camera missed">${esc(s.notes)}</textarea></div>
+    </section>
+    <section class="btn-row">
+      <button class="btn" id="finish">${s.status === 'complete' ? 'Save and close' : 'Finish screen'}</button>
+      <button class="btn danger" id="del">Delete this screen</button>
+    </section>
+  </main>`;
+  const notes = document.getElementById('notes');
+  notes.onchange = () => { s.notes = notes.value; saveDB(); };
+  document.getElementById('back').onclick = () => { s.notes = notes.value; saveDB(); go(renderClient, cid); };
+  app.querySelectorAll('[data-run]').forEach(b => b.onclick = () => { s.notes = notes.value; saveDB(); go(renderTest, cid, sid, b.dataset.run); });
+  app.querySelectorAll('[data-ov]').forEach(sel => sel.onchange = () => {
+    s.results[sel.dataset.ov].override = sel.value === '' ? null : Number(sel.value);
+    saveDB(); go(renderSession, cid, sid);
+  });
+  document.getElementById('finish').onclick = () => {
+    s.notes = notes.value;
+    if (s.status !== 'complete' && Object.keys(s.results).length < TESTS.length && !confirm('Some tests haven’t been run. Finish the screen anyway?')) return;
+    s.status = 'complete'; if (saveDB()){ toast('Screen saved.'); go(renderClient, cid); }
+  };
+  document.getElementById('del').onclick = () => {
+    if (!confirm('Delete this screen? This can’t be undone.')) return;
+    c.sessions = c.sessions.filter(x => x.id !== sid); saveDB(); go(renderClient, cid);
+  };
+}
+
+/* ---------- Test screen ---------- */
+function renderTest(cid, sid, testId){
+  const c = getClient(cid), s = getSession(c, sid), test = testById(testId);
+  if (!s || !test) return go(renderClient, cid);
+  let trialIdx = 0, phase = 'loading', ctrl = null, lastLm = null, timers = [];
+  const collected = {}; // for balance: {L, R}; else single result under key 'single'
+
+  app.innerHTML = `
+  <div class="test">
+    <div class="stage${facing === 'user' ? ' mirror' : ''}" id="stage">
+      <div class="loading" id="loading"><p id="loadMsg">Starting the camera and movement tracking. The first time can take 20–30 seconds.</p></div>
+      <div class="stage-top">
+        <button class="stage-btn" id="back">Back</button>
+        <button class="stage-btn" id="flip">Switch camera</button>
+      </div>
+      <div class="legend" aria-hidden="true"><span><i style="background:${COL.L}"></i>Client’s left</span><span><i style="background:${COL.R}"></i>Client’s right</span></div>
+      <div class="check" id="check" hidden></div>
+      <div class="count" id="count" hidden></div>
+    </div>
+    <aside class="rail">
+      <div><h1>${esc(test.name)}</h1><p class="view">${esc(test.viewText)}</p></div>
+      <p class="trial-label" id="trialLabel"></p>
+      <div class="readout" aria-live="polite"><div class="big" id="big">–</div><div class="sub" id="sub"></div></div>
+      <ol class="steps">${test.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+      <div id="trialResult"></div>
+      <div class="actions" id="actions"></div>
+    </aside>
+  </div>`;
+  const stage = document.getElementById('stage');
+  stage.insertBefore(els.canvas, stage.firstChild);
+  stage.insertBefore(els.video, stage.firstChild);
+  const $big = document.getElementById('big'), $sub = document.getElementById('sub'), $check = document.getElementById('check');
+  const $count = document.getElementById('count'), $actions = document.getElementById('actions'), $tr = document.getElementById('trialResult');
+  const $loading = document.getElementById('loading'), $loadMsg = document.getElementById('loadMsg');
+
+  const trial = () => test.trials[trialIdx];
+  const trialName = t => t === 'L' ? 'Standing on the left leg' : t === 'R' ? 'Standing on the right leg' : '';
+
+  const api = {
+    live(big, sub){ $big.textContent = big; $sub.textContent = sub || ''; },
+    beep: () => beep(),
+    finish(){ if (phase !== 'run') return; ctrl.stop(performance.now()); phase = 'review'; beep(660, 0.25); keepAwake(false); showReview(ctrl.result()); }
+  };
+
+  function setActions(html){ $actions.innerHTML = html; }
+  function toSetup(){
+    phase = 'setup'; ctrl = makeController(testId, trial());
+    document.getElementById('trialLabel').textContent = trialName(trial());
+    $tr.innerHTML = ''; api.live('–', 'Tap Start when the client is ready');
+    setActions(`<button class="btn wide" id="start">Start</button><button class="btn quiet wide" id="unable">Client unable to do this</button>`);
+    document.getElementById('start').onclick = startCountdown;
+    document.getElementById('unable').onclick = () => { if (confirm('Record this as unable to complete?')){ ctrl.stop?.(performance.now()); phase = 'review'; showReview(ctrl.unable()); } };
+  }
+  function startCountdown(){
+    unlockAudio(); keepAwake(true);
+    phase = 'countdown'; $tr.innerHTML = '';
+    setActions(`<button class="btn quiet wide" id="cancel">Cancel</button>`);
+    document.getElementById('cancel').onclick = () => { timers.forEach(clearTimeout); timers = []; $count.hidden = true; keepAwake(false); toSetup(); };
+    let n = 3; $count.hidden = false; $count.textContent = n; beep(520);
+    const step = () => {
+      n--;
+      if (n > 0){ $count.textContent = n; beep(520); timers.push(setTimeout(step, 1000)); }
+      else {
+        $count.textContent = 'Go'; beep(1040, 0.2);
+        timers.push(setTimeout(() => { $count.hidden = true; }, 600));
+        ctrl.begin(lastLm, performance.now());
+        phase = 'run'; $check.hidden = true;
+        setActions(`<button class="btn wide" id="stop">Stop</button>`);
+        document.getElementById('stop').onclick = () => api.finish();
+      }
+    };
+    timers.push(setTimeout(step, 1000));
+  }
+  function describeTrial(r){
+    if (testId === 'sts') return r.unable ? 'Unable to complete' : `${r.time.toFixed(1)} s, ${r.reps} of 5 stands${r.completed ? '' : ' (stopped early)'}`;
+    if (testId === 'balance') return r.unable ? 'Unable to lift the foot' : `${r.time.toFixed(1)} s${r.time >= BAL_MAX ? ' (full 30 s)' : ''}, sway ${r.sway}`;
+    if (testId === 'squat'){
+      if (r.unable) return 'No squats recorded';
+      return `${r.reps.length} rep${r.reps.length === 1 ? '' : 's'} recorded. Best rep: ${r.best.faults.length ? r.best.faults.join('; ') : 'no faults'}`;
+    }
+    return '';
+  }
+  function showReview(r){
+    collected[trial() ?? 'single'] = r;
+    $check.hidden = true;
+    $tr.innerHTML = `<div class="trial-result"><strong>${esc(trialName(trial()) || 'Result')}</strong><span>${esc(describeTrial(r))}</span></div>`;
+    const more = trialIdx < test.trials.length - 1;
+    setActions(`<button class="btn wide" id="next">${more ? 'Next: ' + esc(trialName(test.trials[trialIdx + 1]).toLowerCase()) : 'Save result'}</button><button class="btn quiet wide" id="redo">Redo</button>`);
+    document.getElementById('redo').onclick = toSetup;
+    document.getElementById('next').onclick = () => {
+      if (more){ trialIdx++; toSetup(); return; }
+      const prev = s.results[testId];
+      const result = testId === 'balance' ? {L:collected.L, R:collected.R} : {...collected.single};
+      result.override = null; result.at = new Date().toISOString();
+      if (prev && prev.override != null) toast('Score reset to auto for the new result.');
+      s.results[testId] = result;
+      if (saveDB()) go(renderSession, cid, sid);
+    };
+  }
+
+  onPose = (lm, t) => {
+    lastLm = lm;
+    if (phase === 'setup' || phase === 'countdown'){
+      const chk = bodyCheck(lm, test.view);
+      $check.hidden = false; $check.textContent = chk.msg; $check.className = 'check' + (chk.ok ? ' ok' : '');
+    }
+    if (ctrl && phase !== 'review') ctrl.frame(lm, t, api, phase);
+  };
+
+  async function boot(){
+    $loading.hidden = false;
+    try { await startCamera(); }
+    catch(e){
+      $loadMsg.textContent = 'The camera is blocked. On the iPad open Settings, then Safari, then Camera, choose Allow, and reload this page.';
+      return;
+    }
+    try { await initPose(); }
+    catch(e){
+      console.error(e);
+      $loadMsg.textContent = 'Movement tracking couldn’t load. Check the internet connection, then go back and try again.';
+      return;
+    }
+    $loading.hidden = true;
+    startLoop();
+    toSetup();
+  }
+
+  document.getElementById('back').onclick = () => {
+    if ((phase === 'run' || phase === 'review') && !confirm('Leave without saving this test?')) return;
+    go(renderSession, cid, sid);
+  };
+  document.getElementById('flip').onclick = async () => {
+    if (phase === 'run') return;
+    facing = facing === 'user' ? 'environment' : 'user';
+    stage.classList.toggle('mirror', facing === 'user');
+    try { await startCamera(); } catch(e){ toast('Couldn’t switch camera.', true); }
+  };
+
+  cleanup = () => { timers.forEach(clearTimeout); stopLoop(); stopCamera(); keepAwake(false); els.video.remove(); els.canvas.remove(); };
+  boot();
+}
+
+go(renderHome);
+</script>
+</body>
+</html>
