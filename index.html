@@ -3053,6 +3053,39 @@ function notesText(c, s){
   if (s.notes && s.notes.trim()) out.push('', '', 'NOTES', s.notes.trim());
   return out.join('\n');
 }
+/* ---------- Brief summary for letters: one line per test ---------- */
+function briefResult(t, r, c){
+  if (r.unable) return 'Unable to complete';
+  const v = finalPct(t, r, c), band = v != null ? bandFor(v).label.toLowerCase() : '';
+  if (t.kind === 'health'){
+    const a = t.assess(r, c), first = t.lines(r, c)[0];
+    return `${first}${a?.label ? ` (${a.label.charAt(0).toLowerCase() + a.label.slice(1)})` : ''}`;
+  }
+  if (t.kind === 'strength'){
+    const b = sidesBest(t, r), kg = x => `${x.toFixed(1)} kg`;
+    const vals = t.sides === 'one' ? (b.one != null ? kg(b.one) : '') : ['L','R'].filter(k => b[k] != null).map(k => `${k} ${kg(b[k])}`).join(', ');
+    if (v == null) return vals || 'Recorded';
+    return `${vals}${vals ? ', ' : ''}${symScore(t, r, c) ? `symmetry ${v}%` : `${ordinal(v)} percentile`} (${band})`;
+  }
+  if (t.kind === 'hold'){
+    const sides = holdSides(r).map(x => `${x.k} ${x.m.kept}%`).join(', ');
+    return `force kept over 30 s ${sides}${v != null ? ` (${band})` : ''}`;
+  }
+  if (t.kind === 'trunk'){
+    const sec = k => num(r[k]) != null ? `${num(r[k])} s` : '–';
+    const ch = trunkChecks(r).checks;
+    return `flexors ${sec('flex')}, extensors ${sec('ext')}, side bridge L ${sec('sideL')} / R ${sec('sideR')}${ch.length ? ` – ${ch.filter(x => x.ok).length} of ${ch.length} McGill ratio guidelines met` : ''}`;
+  }
+  return v != null ? `${v}% (${band})` : 'Recorded';
+}
+function briefText(c, s){
+  const out = [`${screenNoun(s)} – ${fmtDate(s.date)}`];
+  for (const t of plannedTests(s)){ const r = s.results[t.id]; if (r) out.push(`${t.name} – ${briefResult(t, r, c)}`); }
+  const o = overall(s, c);
+  if (o) out.push(`Overall – ${o.pct}% (${bandFor(o.pct).label.toLowerCase()})`);
+  return out.join('\n');
+}
+
 async function copyText(text){
   try { await navigator.clipboard.writeText(text); return true; }
   catch(e){
@@ -3394,6 +3427,7 @@ function renderSession(cid, sid){
         <button class="btn ${s.status === 'complete' ? 'sky' : 'quiet'}" id="pdf">Download PDF</button>
         ${day.length > 1 ? `<button class="btn ${s.status === 'complete' ? 'sky' : 'quiet'}" id="dayPdf">Full-day PDF (${day.length} screens)</button>` : ''}
         <button class="btn quiet" id="copyNotes">Copy for clinical notes</button>
+        <button class="btn quiet" id="copyBrief">Copy brief summary</button>
         <button class="btn quiet" id="plan">Choose ${isH ? 'measures' : 'tests'}</button>
       </div>
     </section>`;
@@ -3422,6 +3456,7 @@ function renderSession(cid, sid){
     $('plan').onclick = () => { keepNotes(); go(renderPlan, cid, sid); };
     $('pdf').onclick = e => { keepNotes(); downloadReport(c, s, e.currentTarget); };
     if ($('dayPdf')) $('dayPdf').onclick = e => { keepNotes(); downloadDayReport(c, s, e.currentTarget); };
+    $('copyBrief').onclick = async () => { keepNotes(); const ok = await copyText(briefText(c, s)); toast(ok ? 'Brief summary copied – paste it into the letter.' : 'Couldn’t copy on this device.', !ok); };
     $('copyNotes').onclick = async () => { keepNotes(); const ok = await copyText(notesText(c, s)); toast(ok ? 'Copied – paste it into the client’s notes.' : 'Couldn’t copy on this device.', !ok); };
     if ($('finish')) $('finish').onclick = () => {
       keepNotes();
