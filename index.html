@@ -793,6 +793,38 @@ function chairRange(c){
 const chairStats = c => { const g = chairRange(c); return {m: (g[0] + g[1]) / 2, sd: (g[1] - g[0]) / 2 / 0.674}; };
 const chairCategory = (n, c) => { const g = chairRange(c); return n < g[0] ? 'below average' : n > g[1] ? 'above average' : 'average'; };
 
+/* Shoulder rotation range (90° abduction, elbow 90°), client side-on with the test arm nearest the camera.
+   The forearm (elbow to wrist) swings in the plane facing the camera: 0° = pointing forward,
+   external rotation = rotating up (and back), internal rotation = rotating down. */
+function shoulderRotController(k){
+  const MAX = 14;
+  const st = {t0:0, er:null, ir:null, v:null, ok:false, running:false};
+  return {
+    begin(lm, t){ st.t0 = t; st.running = true; },
+    frame(lm, t, api, phase){
+      if (phase !== 'run') return;
+      const el = (t - st.t0) / 1000;
+      if (el >= MAX){ api.beep(); api.finish(); return; }
+      if (!lm) return;
+      const s = pts(lm, k), nose = P(lm, 0);
+      if (s.el.v < 0.5 || s.wr.v < 0.5){ api.live(`ER ${Math.round(st.er ?? 0)}° · IR ${Math.round(st.ir ?? 0)}°`, 'Can’t see the elbow and wrist clearly'); return; }
+      const torso = dist(s.sh, s.hip) || 1;
+      st.ok = Math.abs(s.el.y - s.sh.y) / torso < 0.3;          // elbow kept at shoulder height
+      const f = Math.sign(nose.x - s.ear.x) || 1;                  // which way the client faces in the image
+      const a = deg(Math.atan2(-(s.wr.y - s.el.y), (s.wr.x - s.el.x) * f));   // 0 forward, +90 up, -90 down
+      st.v = ema(st.v, a, 0.5);
+      if (st.ok){
+        if (st.v > 0) st.er = Math.max(st.er ?? 0, Math.min(st.v, 150));
+        if (st.v < 0) st.ir = Math.max(st.ir ?? 0, Math.min(-st.v, 120));
+      }
+      api.live(`ER ${Math.round(st.er ?? 0)}° · IR ${Math.round(st.ir ?? 0)}°`, st.ok ? `${Math.ceil(MAX - el)} s left` : 'Keep the elbow at shoulder height');
+    },
+    stop(){ st.running = false; },
+    result(){ return {er: Math.round(st.er ?? 0), ir: Math.round(st.ir ?? 0), unable: st.er == null && st.ir == null}; },
+    unable(){ return {er:0, ir:0, unable:true}; }
+  };
+}
+
 /* Single-leg balance */
 function balController(stance){
   const liftI = stance === 'L' ? 28 : 27, standI = stance === 'L' ? 27 : 28, hipI = stance === 'L' ? 23 : 24;
@@ -863,7 +895,7 @@ function tandemController(){
 function marchController(){
   const DUR = 20;
   const st = {t0:0, running:false, sway:SwayTracker(), base:{L:{knee:Baseline(), thigh:Baseline()}, R:{knee:Baseline(), thigh:Baseline()}},
-              leg:{L:{up:false, peak:0, steps:[]}, R:{up:false, peak:0, steps:[]}}, b:{}, el:0};
+              leg:{L:{up:false, peak:0, steps:[], s:null, tUp:0, tStep:-1e9}, R:{up:false, peak:0, steps:[], s:null, tUp:0, tStep:-1e9}}, b:{}, el:0, last:null, tLast:-1e9};
   return {
     begin(lm, t){ st.t0 = t; st.running = true; for (const k of ['L','R']) st.b[k] = {knee: st.base[k].knee.get(), thigh: st.base[k].thigh.get()}; },
     frame(lm, t, api, phase){
@@ -875,13 +907,24 @@ function marchController(){
       if (phase !== 'run') return;
       st.el = (t - st.t0) / 1000;
       st.sway.add(lm);
+      // One step = the knee rises clearly and comes back down. The lift is smoothed, needs a clear rise
+      // (20% of thigh length) and a clear return (8%), must stay up briefly, and a leg can't count again
+      // within 0.4 s – so camera jitter or a leg-label swap doesn't turn one step into several.
       for (const k of ['L','R']){
         const b = st.b[k]; if (!b.knee || !b.thigh) continue;
-        const lift = (b.knee - P(lm, SIDE[k].knee).y) / b.thigh;
-        const a = deg(Math.acos(clamp(1 - lift, -1, 1)));
+        const kp = P(lm, SIDE[k].knee); if (kp.v < 0.5) continue;
         const L = st.leg[k];
-        if (!L.up && lift > 0.12){ L.up = true; L.peak = a; }
-        if (L.up){ L.peak = Math.max(L.peak, a); if (lift < 0.05){ L.up = false; L.steps.push(L.peak); } }
+        L.s = ema(L.s, (b.knee - kp.y) / b.thigh, 0.45);
+        const lift = L.s, a = deg(Math.acos(clamp(1 - lift, -1, 1)));
+        if (!L.up && lift > 0.2){ L.up = true; L.peak = a; L.tUp = t; }
+        if (L.up){
+          L.peak = Math.max(L.peak, a);
+          if (lift < 0.08){
+            L.up = false;
+            const held = t - L.tUp >= 120, rested = t - L.tStep >= 400;
+            if (held && rested){ L.steps.push(L.peak); L.tStep = t; st.last = k; st.tLast = t; }
+          }
+        }
       }
       if (st.el >= DUR){ api.beep(); api.finish(); return; }
       api.live(`${Math.ceil(DUR - st.el)} s`, `${st.leg.L.steps.length + st.leg.R.steps.length} steps`);
@@ -1133,24 +1176,6 @@ const TESTS = [
       return {lines, flags};
     }
   },
-  { id:'tandem', name:'Tandem stance', group:'front', kit:'No equipment',
-    trials:['L','R'], trialName: t => `${legName(t)} foot in front`, view: () => 'front',
-    steps:['Client stands heel-to-toe facing the camera, arms by their sides or crossed. Help them into position if needed.',
-           'Tap Start once they’re steady. Timing starts at “Go”.',
-           'It stops when a foot moves or steps out, or at 30 seconds.',
-           'The app then gives them 8 seconds to swap feet before the second side starts.'],
-    autoSwitch:{secs:8, msg: t => `Swap feet. Put your ${t === 'L' ? 'left' : 'right'} foot in front.`},
-    make: () => tandemController(),
-    describe: r => r.unable ? 'Unable to hold the position' : `${r.time.toFixed(1)} s${r.time >= BAL_MAX ? ' (full 30 s)' : ''}, sway ${r.sway}`,
-    sideScore: x => (x.unable || !x.time) ? 0 : x.time >= BAL_MAX - 0.05 ? 3 : x.time >= 10 ? 2 : 1,
-    score(r){ return lrMin(r, this.sideScore); },
-    summary(r){
-      const flags = [];
-      for (const k of ['L','R']) if (r[k] && !r[k].unable && r[k].time < 10) flags.push({t:`${legName(k)} foot in front: under 10 s – linked with higher falls risk`, bad:true});
-      if (r.L && r.R){ const a = asym(r.L.time, r.R.time, 25, 'Hold time'); if (a) flags.push(a); }
-      return {lines:['L','R'].map(k => `${legName(k)} foot in front: ${r[k] ? this.describe(r[k]) : 'not done'}`).concat('Target 30 s each side'), flags};
-    }
-  },
   { id:'march', name:'Marching on the spot', group:'front', kit:'No equipment',
     trials:[null], view: () => 'front',
     steps:['Client faces the camera and stands still during the countdown.',
@@ -1240,21 +1265,6 @@ const TESTS = [
   },
 
   /* ---- Client side-on to the camera ---- */
-  { id:'sts', name:'5× sit-to-stand', group:'side', kit:'Chair against a wall',
-    trials:[null], view: () => 'side',
-    steps:['Chair against a wall, seat at about knee height.',
-           'Client sits with arms crossed on the chest, feet flat.',
-           'At “Go” they stand up fully and sit down 5 times, as fast as is safe.',
-           'Timing stops automatically at the 5th stand.'],
-    make: () => stsController(),
-    describe: r => r.unable ? 'Unable to complete' : `${r.time.toFixed(1)} s, ${r.reps} of 5 stands${r.completed ? '' : ' (stopped early)'}`,
-    score(r, c){ if (r.unable || !r.reps) return 0; if (!r.completed) return 1; return r.time <= NORM.sts(c.age) ? 3 : r.time <= 15 ? 2 : 1; },
-    summary(r, c){
-      const flags = [];
-      if (!r.unable && r.completed && r.time > 15) flags.push({t:'Slower than 15 s – linked with higher falls risk', bad:true});
-      return {lines:[this.describe(r), `Age target ${NORM.sts(c.age)} s or faster`], flags};
-    }
-  },
   { id:'chair30', name:'30-second chair stand', group:'side', kit:'Chair against a wall',
     trials:[null], view: () => 'side',
     steps:['Chair against a wall, seat about 43 cm high.',
@@ -1370,6 +1380,29 @@ const TESTS = [
       const lines = [`Left ${peakSide(r.L, x => Math.round(x.value) + '°')}, right ${peakSide(r.R, x => Math.round(x.value) + '°')}`, 'Target 38° or more (about 10 cm knee-to-wall)'];
       const flags = [];
       if (r.L && r.R && !r.L.unable && !r.R.unable && Math.abs(r.L.value - r.R.value) > 5) flags.push({t:`Left/right difference of ${Math.round(Math.abs(r.L.value - r.R.value))}°`});
+      return {lines, flags};
+    }
+  },
+  { id:'shrot', name:'Shoulder rotation range', group:'side', kit:'Chair without arms',
+    trials:['L','R'], trialName: t => `${legName(t)} shoulder`, view: () => 'side',
+    steps:['Client sits side-on to the camera with the test arm nearest the camera.',
+           'Arm out to the side at shoulder height, elbow bent to 90°, forearm pointing forward.',
+           'At “Go” they rotate the forearm up and back as far as is comfortable and hold for 2 seconds, then down as far as is comfortable and hold for 2 seconds. Keep the elbow at shoulder height and the trunk still.',
+           'Each side takes 14 seconds. For the other side they turn around so that arm is nearest the camera. The app counts them in.'],
+    autoSwitch:{secs:8, msg: t => `Turn around so your ${t === 'L' ? 'left' : 'right'} arm is closest to the camera.`},
+    make: t => shoulderRotController(t),
+    describe: r => r.unable ? 'Unable' : `external ${r.er}°, internal ${r.ir}°`,
+    sideScore: x => (x.unable) ? 0 : (x.er >= 90 && x.ir >= 70) ? 3 : (x.er >= 70 && x.ir >= 50) ? 2 : 1,
+    score(r){ return lrMin(r, this.sideScore); },
+    pct(r){ return both(r, x => x.unable ? 0 : avg([grade(x.er, 90, 45), grade(x.ir, 70, 30)])); },
+    summary(r){
+      const flags = [], lines = ['L','R'].map(k => `${legName(k)}: ${r[k] ? this.describe(r[k]) : 'not done'}`);
+      lines.push('Target external rotation 90°, internal rotation 70°');
+      if (r.L && r.R && !r.L.unable && !r.R.unable){
+        const dE = Math.abs(r.L.er - r.R.er), dI = Math.abs(r.L.ir - r.R.ir);
+        if (dE > 10) flags.push({t:`Left/right external rotation difference of ${dE}°`});
+        if (dI > 10) flags.push({t:`Left/right internal rotation difference of ${dI}°`});
+      }
       return {lines, flags};
     }
   },
@@ -3680,6 +3713,7 @@ function renderTest(cid, sid, testId){
     if (Array.isArray(r.reps)) return `${r.reps.length} rep${r.reps.length === 1 ? '' : 's'}`;
     if (typeof r.reps === 'number') return test.id === 'chair30' ? `${r.reps} stand${r.reps === 1 ? '' : 's'}` : `${r.reps} of 5`;
     if (r.stepsL != null) return `${r.stepsL + r.stepsR} steps`;
+    if (r.er != null) return `ER ${r.er}° · IR ${r.ir}°`;
     if (r.value != null) return test.id === 'reach' ? `${Math.round(r.value)} cm` : `${Math.round(r.value)}°`;
     if (r.time != null) return `${r.time.toFixed(1)} s`;
     return 'Done';
