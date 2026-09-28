@@ -825,6 +825,89 @@ function shoulderRotController(k){
   };
 }
 
+/* ---------- Jump and hop norms (estimates where the source gives ranges) ---------- */
+/* Adults 20–34: average / good / excellent bands in cm. Children and teens scaled down; from 35 a gradual
+   fall to half by 80 (estimate). */
+const JUMP_AGE = age => { const a = age ?? 30; return a < 10 ? 0.45 : a < 13 ? 0.7 : a < 16 ? 0.85 : a < 20 ? 0.95 : a < 35 ? 1 : Math.max(0.5, 1 - 0.5 * (a - 35) / 45); };
+function vjBands(c){
+  const M = {avg:41, good:50, exc:60, top:71}, F = {avg:31, good:40, exc:51, top:61};
+  const b = c.sex === 'male' ? M : c.sex === 'female' ? F : Object.fromEntries(Object.keys(M).map(k => [k, (M[k] + F[k]) / 2]));
+  const f = JUMP_AGE(c.age); return Object.fromEntries(Object.entries(b).map(([k, v]) => [k, Math.round(v * f)]));
+}
+const vjPct = (cm, c) => { const b = vjBands(c); return pw(cm, [[0,0],[b.avg,40],[b.good,60],[b.exc,90],[b.top,100]]); };
+const vjCategory = (cm, c) => { const b = vjBands(c); return cm < b.avg ? 'below average' : cm < b.good ? 'average' : cm < b.exc ? 'good' : 'excellent'; };
+/* Single-leg hop: reference 192 cm men, 149 cm women (athletes), same age scaling */
+const hopRef = c => Math.round((c.sex === 'male' ? 192 : c.sex === 'female' ? 149 : 170.5) * JUMP_AGE(c.age));
+const hopPct = (cm, c) => { const r = hopRef(c); return pw(cm, [[0,0],[0.55*r,40],[0.7*r,60],[0.85*r,75],[r,90],[1.15*r,100]]); };
+function pw(v, k){ if (!Number.isFinite(v)) return null; if (v >= k[k.length-1][0]) return k[k.length-1][1]; for (let i = 1; i < k.length; i++) if (v <= k[i][0]) return Math.round(k[i-1][1] + (v - k[i-1][0]) / (k[i][0] - k[i-1][0]) * (k[i][1] - k[i-1][1])); return 0; }
+
+/* Vertical jump: jump height from flight time (take-off to landing, both toes), h = g·t²/8.
+   Up to 3 jumps in one go; the best counts. */
+function vjumpController(c = {}){
+  const st = {tb:{L:Baseline(), R:Baseline()}, lb:Baseline(), b:null, leg:1, t0:0, air:false, tUp:0, tDown:-1e9, prev:null, jumps:[], running:false};
+  const TH = 0.03;
+  const rise = lm => { const out = []; for (const k of ['L','R']){ const p = P(lm, SIDE[k].toe); if (p.v < 0.4) return null; out.push((st.b[k] - p.y) / st.leg); } return Math.min(...out); };
+  return {
+    begin(lm, t){ st.t0 = t; st.running = true; st.b = {L: st.tb.L.get(), R: st.tb.R.get()}; st.leg = st.lb.get() || 1; },
+    frame(lm, t, api, phase){
+      if (phase === 'setup' || phase === 'countdown'){ if (lm){ st.tb.L.add(P(lm, 31).y); st.tb.R.add(P(lm, 32).y); st.lb.add((dist(P(lm, 23), P(lm, 27)) + dist(P(lm, 24), P(lm, 28))) / 2); } return; }
+      if (phase !== 'run') return;
+      const el = (t - st.t0) / 1000;
+      if (el > 25){ api.finish(); return; }
+      if (!lm || st.b?.L == null) return;
+      const r = rise(lm); if (r == null) return;
+      const cross = () => st.prev ? st.prev.t + (TH - st.prev.r) / ((r - st.prev.r) || 1e-6) * (t - st.prev.t) : t;   // sub-frame timing
+      if (!st.air && r > TH && t - st.tDown > 800){ st.air = true; st.tUp = cross(); }
+      else if (st.air && r < TH){
+        st.air = false; st.tDown = cross();
+        let ft = (st.tDown - st.tUp) / 1000;
+        // the toes are counted as airborne only once 3% of leg length up, so add back the time spent below that at each end
+        if (ft > 0.12) ft += 2 * (TH * (c.height || 170) * 0.49 / 100) / (9.81 * ft / 2);
+        if (ft > 0.12 && ft < 1.1){ const cm = Math.round(9.81 * ft * ft / 8 * 100); st.jumps.push(cm); api.beep(); if (st.jumps.length >= 3){ api.finish(); return; } }
+      }
+      st.prev = {t, r};
+      api.live(st.jumps.length ? `${Math.max(...st.jumps)} cm` : '–', st.air ? 'In the air…' : `Jump ${st.jumps.length + 1} of 3`);
+    },
+    stop(){ st.running = false; },
+    result(){ return {value: st.jumps.length ? Math.max(...st.jumps) : 0, jumps: st.jumps.slice(), unable: !st.jumps.length}; },
+    unable(){ return {value:0, jumps:[], unable:true}; }
+  };
+}
+
+/* Single-leg hop for distance: take-off toe to landing heel, scaled from the client's height
+   (ear to heel ≈ 93% of height while standing). Test leg nearest the camera. */
+function hopController(k, c){
+  const st = {tb:Baseline(), tx:Baseline(), hb:Baseline(), eb:Baseline(), lb:Baseline(), b:null, t0:0, phase:'ready', tLand:0, hx:[], dist:null, running:false};
+  return {
+    begin(lm, t){ st.t0 = t; st.running = true; st.b = {toe: st.tb.get(), x: st.tx.get(), heel: st.hb.get(), ear: st.eb.get(), leg: st.lb.get() || 1}; },
+    frame(lm, t, api, phase){
+      const s = lm ? pts(lm, k) : null;
+      if (phase === 'setup' || phase === 'countdown'){ if (s){ st.tb.add(s.toe.y); st.tx.add(s.toe.x); st.hb.add(s.heel.y); st.eb.add(s.ear.y); st.lb.add(dist(s.hip, s.ank)); } return; }
+      if (phase !== 'run') return;
+      const el = (t - st.t0) / 1000;
+      if (el > 15 && st.phase === 'ready'){ api.finish(); return; }
+      if (!s || s.toe.v < 0.4 || st.b?.toe == null) return;
+      const rise = (st.b.toe - s.toe.y) / st.b.leg;
+      if (st.phase === 'ready' && rise > 0.05) st.phase = 'air';
+      else if (st.phase === 'air' && rise < 0.025){ st.phase = 'land'; st.tLand = t; api.beep(); }
+      else if (st.phase === 'land'){
+        const since = t - st.tLand;
+        if (since > 300 && since < 1300 && s.heel.v > 0.4) st.hx.push(s.heel.x);
+        if (since >= 1500){
+          const xs = st.hx.sort((a, b) => a - b), hx = xs[Math.floor(xs.length / 2)];
+          const cmPerPx = (c.height || 170) * 0.93 / Math.max(1e-6, st.b.heel - st.b.ear);
+          if (hx != null) st.dist = Math.round(Math.abs(hx - st.b.x) * cmPerPx);
+          api.finish(); return;
+        }
+      }
+      api.live(st.dist != null ? `${st.dist} cm` : '–', st.phase === 'ready' ? 'Hop when ready' : st.phase === 'air' ? 'In the air…' : 'Hold the landing');
+    },
+    stop(){ st.running = false; },
+    result(){ return {value: st.dist ?? 0, unable: st.dist == null}; },
+    unable(){ return {value:0, unable:true}; }
+  };
+}
+
 /* Single-leg balance */
 function balController(stance){
   const liftI = stance === 'L' ? 28 : 27, standI = stance === 'L' ? 27 : 28, hipI = stance === 'L' ? 23 : 24;
@@ -1403,6 +1486,46 @@ const TESTS = [
         if (dE > 10) flags.push({t:`Left/right external rotation difference of ${dE}°`});
         if (dI > 10) flags.push({t:`Left/right internal rotation difference of ${dI}°`});
       }
+      return {lines, flags};
+    }
+  },
+  { id:'vjump', name:'Vertical jump', group:'side', kit:'Clear floor space',
+    trials:[null], view: () => 'side',
+    steps:['Client stands side-on to the camera, feet hip-width apart, whole body in view including the feet and room above the head.',
+           'Stand still during the countdown so the app can record their standing position.',
+           'At “Go” they dip and jump straight up as high as they can, swinging the arms, and land on both feet with straight legs – the same way they took off.',
+           'Three jumps with a short pause between. The best jump counts. Height is worked out from the time in the air.'],
+    make: (t, c) => vjumpController(c),
+    describe: r => r.unable ? 'Unable' : `${r.value} cm${r.jumps?.length > 1 ? ` (jumps: ${r.jumps.join(', ')} cm)` : ''}`,
+    score(r, c){ if (r.unable) return 0; const k = vjCategory(r.value, c); return k === 'excellent' || k === 'good' ? 3 : k === 'average' ? 2 : 1; },
+    pct(r, c){ return r.unable ? 0 : vjPct(r.value, c); },
+    summary(r, c){
+      const b = vjBands(c), lines = [this.describe(r)];
+      if (!r.unable) lines.push(`${vjCategory(r.value, c).replace(/^./, x => x.toUpperCase())} – average for age${c.sex ? ' and gender' : ''} ${b.avg}–${b.good} cm, good ${b.good}–${b.exc} cm, excellent ${b.exc} cm or more`);
+      const flags = [];
+      if (!c.sex) flags.push({t:'Add the client’s gender for accurate norms'});
+      return {lines, flags};
+    }
+  },
+  { id:'hop', name:'Single-leg hop for distance', group:'side', kit:'Clear floor space, 3 m', needsHeight:true,
+    trials:['L','R'], trialName: t => `${legName(t)} leg`, view: () => 'side',
+    steps:['Client stands on the test leg, side-on to the camera, with the test leg nearest the camera and room to hop forward about 2 m in view.',
+           'Stand still during the countdown so the app can record the starting position and scale.',
+           'At “Go” they hop forward as far as they can and land on the same leg, holding the landing for 2 seconds. Arms can swing.',
+           'Distance is from the toe at take-off to the heel at landing, scaled from the client’s height. For the other leg they turn around so it is nearest the camera.'],
+    autoSwitch:{secs:10, msg: t => `Go back to the start. Stand on your ${t === 'L' ? 'left' : 'right'} leg, turned so it is closest to the camera.`},
+    make: (t, c) => hopController(t, c),
+    describe: r => r.unable ? 'Unable' : `${r.value} cm`,
+    sideScore(x, c){ if (x.unable) return 0; const p = hopPct(x.value, c); return p >= 75 ? 3 : p >= 40 ? 2 : 1; },
+    score(r, c){ return (!r || !r.L || !r.R) ? null : Math.min(this.sideScore(r.L, c), this.sideScore(r.R, c)); },
+    pct(r, c){ return both(r, x => x.unable ? 0 : hopPct(x.value, c)); },
+    summary(r, c){
+      const lines = [`Left ${r.L ? this.describe(r.L) : 'not done'}, right ${r.R ? this.describe(r.R) : 'not done'}`], flags = [];
+      if (r.L && r.R && !r.L.unable && !r.R.unable && r.L.value && r.R.value){
+        lines.push(`Limb symmetry ${Math.round(Math.min(r.L.value, r.R.value) / Math.max(r.L.value, r.R.value) * 100)}% (${r.L.value < r.R.value ? 'left' : 'right'} shorter)`);
+      }
+      lines.push(`Target about ${hopRef(c)} cm or more each leg`);
+      if (!c.sex) flags.push({t:'Add the client’s gender for accurate norms'});
       return {lines, flags};
     }
   },
@@ -3245,6 +3368,9 @@ function briefResult(t, r, c){
     return `flexors ${sec('flex')}, extensors ${sec('ext')}, side bridge L ${sec('sideL')} / R ${sec('sideR')}`;
   }
   if (t.id === 'chair30') return `${t.describe(r)} (${chairCategory(r.reps, c)})`;
+  if (t.id === 'vjump') return `${r.value} cm (${vjCategory(r.value, c)})`;
+  if (t.id === 'hop') return `${['L','R'].filter(k => r[k] && !r[k].unable).map(k => `${k} ${r[k].value} cm`).join(', ') || 'Recorded'}${band ? ` (${band})` : ''}`;
+  if (t.id === 'shrot') return `${['L','R'].filter(k => r[k] && !r[k].unable).map(k => `${k} external ${r[k].er}°, internal ${r[k].ir}°`).join('; ') || 'Recorded'}${band ? ` (${band})` : ''}`;
   return band || 'Recorded';
 }
 function briefText(c, s){
@@ -3714,7 +3840,7 @@ function renderTest(cid, sid, testId){
     if (typeof r.reps === 'number') return test.id === 'chair30' ? `${r.reps} stand${r.reps === 1 ? '' : 's'}` : `${r.reps} of 5`;
     if (r.stepsL != null) return `${r.stepsL + r.stepsR} steps`;
     if (r.er != null) return `ER ${r.er}° · IR ${r.ir}°`;
-    if (r.value != null) return test.id === 'reach' ? `${Math.round(r.value)} cm` : `${Math.round(r.value)}°`;
+    if (r.value != null) return ['reach', 'vjump', 'hop'].includes(test.id) ? `${Math.round(r.value)} cm` : `${Math.round(r.value)}°`;
     if (r.time != null) return `${r.time.toFixed(1)} s`;
     return 'Done';
   }
