@@ -844,24 +844,40 @@ function pw(v, k){ if (!Number.isFinite(v)) return null; if (v >= k[k.length-1][
 /* Vertical jump: jump height from flight time (take-off to landing, both toes), h = g·t²/8.
    Up to 3 jumps in one go; the best counts. */
 function vjumpController(c = {}){
-  const st = {tb:{L:Baseline(), R:Baseline()}, lb:Baseline(), b:null, leg:1, t0:0, air:false, tUp:0, tDown:-1e9, prev:null, jumps:[], running:false};
+  // Each foot's lowest visible point (heel or toe). Side-on, the far foot is often hidden behind the near
+  // one, so any foot the camera can see is used – it doesn't need both.
+  const FOOT = {L:[29, 31], R:[30, 32]};
+  const low = (lm, k) => { const ys = FOOT[k].map(i => P(lm, i)).filter(p => p.v >= 0.3).map(p => p.y); return ys.length ? Math.max(...ys) : null; };
+  const st = {fb:{L:Baseline(), R:Baseline()}, lb:Baseline(), b:null, leg:1, t0:0, air:false, tUp:0, tDown:-1e9, prev:null, jumps:[], running:false, seen:0};
   const TH = 0.03;
-  const rise = lm => { const out = []; for (const k of ['L','R']){ const p = P(lm, SIDE[k].toe); if (p.v < 0.4) return null; out.push((st.b[k] - p.y) / st.leg); } return Math.min(...out); };
+  const rise = lm => {
+    const out = [];
+    for (const k of ['L','R']){ const y = low(lm, k); if (y != null && st.b[k] != null) out.push((st.b[k] - y) / st.leg); }
+    return out.length ? Math.min(...out) : null;
+  };
   return {
-    begin(lm, t){ st.t0 = t; st.running = true; st.b = {L: st.tb.L.get(), R: st.tb.R.get()}; st.leg = st.lb.get() || 1; },
+    begin(lm, t){ st.t0 = t; st.running = true; st.b = {L: st.fb.L.get(), R: st.fb.R.get()}; st.leg = st.lb.get() || 1; },
     frame(lm, t, api, phase){
-      if (phase === 'setup' || phase === 'countdown'){ if (lm){ st.tb.L.add(P(lm, 31).y); st.tb.R.add(P(lm, 32).y); st.lb.add((dist(P(lm, 23), P(lm, 27)) + dist(P(lm, 24), P(lm, 28))) / 2); } return; }
+      if (phase === 'setup' || phase === 'countdown'){
+        if (lm){
+          for (const k of ['L','R']){ const y = low(lm, k); if (y != null) st.fb[k].add(y); }
+          const legs = [[23, 27], [24, 28]].filter(([h, a]) => P(lm, h).v >= 0.3 && P(lm, a).v >= 0.3).map(([h, a]) => dist(P(lm, h), P(lm, a)));
+          if (legs.length) st.lb.add(Math.max(...legs));
+        }
+        return;
+      }
       if (phase !== 'run') return;
       const el = (t - st.t0) / 1000;
       if (el > 25){ api.finish(); return; }
-      if (!lm || st.b?.L == null) return;
-      const r = rise(lm); if (r == null) return;
+      if (!lm || !st.b) return;
+      const r = rise(lm);
+      if (r == null){ api.live(st.jumps.length ? `${Math.max(...st.jumps)} cm` : '–', 'Can’t see the feet – check the whole body and floor are in view'); return; }
       const cross = () => st.prev ? st.prev.t + (TH - st.prev.r) / ((r - st.prev.r) || 1e-6) * (t - st.prev.t) : t;   // sub-frame timing
       if (!st.air && r > TH && t - st.tDown > 800){ st.air = true; st.tUp = cross(); }
       else if (st.air && r < TH){
         st.air = false; st.tDown = cross();
         let ft = (st.tDown - st.tUp) / 1000;
-        // the toes are counted as airborne only once 3% of leg length up, so add back the time spent below that at each end
+        // the feet are counted as airborne only once 3% of leg length up, so add back the time spent below that at each end
         if (ft > 0.12) ft += 2 * (TH * (c.height || 170) * 0.49 / 100) / (9.81 * ft / 2);
         if (ft > 0.12 && ft < 1.1){ const cm = Math.round(9.81 * ft * ft / 8 * 100); st.jumps.push(cm); api.beep(); if (st.jumps.length >= 3){ api.finish(); return; } }
       }
