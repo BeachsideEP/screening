@@ -329,6 +329,9 @@ body{background:var(--page)}
 .type-dot.health{background:#00728D}
 .type-dot.endurance{background:#fff;box-shadow:inset 0 0 0 3px #00728D}
 .plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
+.plan-foot{display:flex;flex-wrap:wrap;align-items:flex-end;gap:1rem;margin-top:1rem}
+.plan-foot .field{flex:0 0 200px}
+.plan-foot .note{margin:0 0 .9rem;flex:1 1 240px}
 .plan-grid textarea{min-height:130px;resize:vertical}
 .detail .change{font-weight:700;color:var(--tide)}
 .bp-note{border-radius:var(--radius);padding:.9rem 1.2rem;margin:0 0 1.25rem;background:var(--surface);border-left:5px solid var(--good);box-shadow:var(--card-shadow)}
@@ -3210,7 +3213,8 @@ function drawSession(doc, c, s){
   doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(...grey);
   doc.text(`Age ${c.age}${c.sex ? `, ${c.sex}` : ''}${stype(s) === 'strength' && (s.weight || c.weight) ? `, body weight ${s.weight || c.weight} kg` : ''}`, M, y + 7);
   doc.text(`Screen date ${fmtDate(s.date)}`, W - M, y, {align:'right'});
-  if (prev) doc.text(`Previous screen ${fmtDate(prev.date)}`, W - M, y + 7, {align:'right'});
+  const rvTxt = reviewOf(c, s.date) ? `, next review ${reviewOf(c, s.date)}` : '';
+  doc.text(prev ? `Previous screen ${fmtDate(prev.date)}${rvTxt}` : `First screen${rvTxt}`, W - M, y + 7, {align:'right'});
 
   // Overall
   y += 15;
@@ -3244,6 +3248,7 @@ function drawSession(doc, c, s){
     if (!P){ doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...ink); doc.text(`${o.pct}%`, mx, by - 4.3, {align:'center'}); }
     if (po && po.scale === o.scale){ const px = bx + bw * clamp(po.pct, 0, 100) / 100; doc.setDrawColor(...ink); doc.setFillColor(255,255,255); doc.setLineWidth(0.6); doc.circle(px, by + bh / 2, 1.7, 'FD'); }
   } else { doc.setTextColor(...grey); doc.setFontSize(11); doc.text(Object.keys(s.results).length ? 'No percentage scores for these tests – see the results below' : `No ${itemNoun(s, 2)} recorded`, M + 8, y + 20); }
+  if (!prev){ doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...tide); doc.text(START_TEXT, M, y + 67); y += 7; }
   y += 72;
 
   // Movements
@@ -3373,6 +3378,8 @@ function notesText(c, s){
     if (planLines(pl.plan).length) out.push('', '', 'PLAN', ...planLines(pl.plan));
     if (planLines(pl.progressions).length) out.push('', '', 'PROGRESSIONS', ...planLines(pl.progressions).map(g => `- ${g}`));
   }
+  if (reviewOf(c, s.date)){ out.push('', `Next review: ${reviewOf(c, s.date)}`);
+  }
   return out.join('\n');
 }
 /* ---------- Brief summary for letters: one line per test ---------- */
@@ -3434,7 +3441,13 @@ function buildDayReport(jsPDF, c, sessions){
   doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(...grey);
   doc.text(`Age ${c.age}${c.sex ? `, ${c.sex}` : ''}${c.height ? `, ${c.height} cm` : ''}${c.weight ? `, ${c.weight} kg` : ''}`, M, y + 7);
   doc.text(`Screening date ${fmtDate(date)}`, W - M, y, {align:'right'});
+  if (reviewOf(c, date)) doc.text(`Next review ${reviewOf(c, date)}`, W - M, y + 7, {align:'right'});
   y += 20;
+  if (sessions.every(x => !previousSession(c, x))){
+    doc.setFillColor(...tint); doc.roundedRect(M, y - 4, CW, 12, 3, 3, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...tide); doc.text(START_TEXT, M + 6, y + 3.6);
+    y += 16;
+  }
   doc.setTextColor(...ink); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text('Summary', M, y); y += 4;
   doc.setDrawColor(...ink); doc.setLineWidth(0.5); doc.line(M, y, W - M, y); y += 8;
   sessions.forEach((s, i) => {
@@ -3444,7 +3457,7 @@ function buildDayReport(jsPDF, c, sessions){
     doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...grey);
     const pv = o && po ? (o.scale === 'pctile' ? (po.ofAvg != null && o.ofAvg != null ? [po.ofAvg, o.ofAvg - po.ofAvg] : null) : [po.pct, o.pct - po.pct]) : null;
     doc.text(o ? `From ${o.n} of ${n} ${itemNoun(s, n)}${pv ? `; previous screen ${pv[0]}% (${pv[1] >= 0 ? '+' : ''}${pv[1]} points)` : ''}` : 'No percentage scores', M + 8, y + 17);
-    doc.text('Full results on the following pages', M + 8, y + 23);
+    doc.text(prev ? 'Full results on the following pages' : 'First screen - your starting point. Full results on the following pages', M + 8, y + 23);
     if (o){
       const P = o.scale === 'pctile' && o.ofAvg != null, b = bandFor(o.pct, o.scale);
       doc.setTextColor(...tide); doc.setFont('helvetica','bold'); doc.setFontSize(26); doc.text(`${P ? o.ofAvg : o.pct}%`, W - M - 50, y + 17, {align:'right'});
@@ -3491,13 +3504,15 @@ const plansOf = c => (c.plans = c.plans || []);
 const planFor = (c, iso) => plansOf(c).find(p => p.day === dayKey(iso)) || null;
 function planEnsure(c, iso){ let p = planFor(c, iso); if (!p){ p = {id:uid(), day:dayKey(iso), goals:'', plan:'', progressions:'', updated:null}; plansOf(c).push(p); } return p; }
 const planHasContent = p => !!(p && (p.goals.trim() || p.plan.trim() || p.progressions.trim()));
+const reviewOf = (c, iso) => { const r = planFor(c, iso)?.review; return r ? fmtDate(r + 'T12:00:00') : null; };
+const START_TEXT = 'This is your starting point - we\'ll re-test at your review to show your progress.';
 const planLines = t => String(t || '').split(/\n+/).map(x => x.replace(/^\s*[-•*]\s*/, '').trim()).filter(Boolean);
 const appUntil = iso => { const d = new Date(iso); d.setDate(d.getDate() + APP_WEEKS * 7); return d.toISOString(); };
 /* Latest plan for the client (for the client page) */
 const latestPlan = c => plansOf(c).filter(planHasContent).sort((a, b) => b.day.localeCompare(a.day))[0] || null;
 
 function planCardHTML(c, s){
-  const p = planFor(c, s.date) || {goals:'', plan:'', progressions:''};
+  const p = planFor(c, s.date) || {goals:'', plan:'', progressions:'', review:''};
   const prev = plansOf(c).filter(x => x.day < dayKey(s.date) && planHasContent(x)).sort((a, b) => b.day.localeCompare(a.day))[0];
   return `<section class="card plan-card">
     <div class="card-head"><h2>Goals and plan</h2><span class="row-meta">For this visit – included in the PDF</span></div>
@@ -3507,7 +3522,11 @@ function planCardHTML(c, s){
       <div class="field"><label for="pPlan">The plan</label><textarea id="pPlan" rows="4" placeholder="e.g. Home program 3 times a week, class on Tuesdays, review in 10 weeks">${esc(p.plan)}</textarea></div>
       <div class="field"><label for="pProg">Progressions</label><textarea id="pProg" rows="4" placeholder="e.g. Once 3 × 12 sit-to-stands feel easy, hold a 4 kg weight">${esc(p.progressions)}</textarea></div>
     </div>
-    <p class="note" style="margin:1rem 0 0">App access: ${APP_WEEKS} weeks from this visit, until ${fmtDate(appUntil(s.date))}.</p>
+    <div class="plan-foot">
+      <div class="field"><label for="pReview">Next review</label><input id="pReview" type="date" value="${esc(p.review || '')}"></div>
+      <button class="btn quiet small" id="pReview10">In ${APP_WEEKS} weeks</button>
+      <p class="note">App access: ${APP_WEEKS} weeks from this visit, until ${fmtDate(appUntil(s.date))}.</p>
+    </div>
   </section>`;
 }
 function bindPlanCard(c, s){
@@ -3516,10 +3535,11 @@ function bindPlanCard(c, s){
   let timer = null;
   const keep = () => {
     const p = planEnsure(c, s.date);
-    p.goals = $('pGoals').value; p.plan = $('pPlan').value; p.progressions = $('pProg').value; p.updated = new Date().toISOString();
+    p.goals = $('pGoals').value; p.plan = $('pPlan').value; p.progressions = $('pProg').value; p.review = $('pReview').value || ''; p.updated = new Date().toISOString();
     clearTimeout(timer); timer = setTimeout(saveDB, 600);
   };
-  ['pGoals', 'pPlan', 'pProg'].forEach(id => { $(id).oninput = keep; $(id).onchange = () => { keep(); saveDB(); }; });
+  ['pGoals', 'pPlan', 'pProg', 'pReview'].forEach(id => { $(id).oninput = keep; $(id).onchange = () => { keep(); saveDB(); }; });
+  $('pReview10').onclick = () => { $('pReview').value = dayKey(appUntil(s.date)); keep(); saveDB(); };
   if ($('planCopy')) $('planCopy').onclick = () => {
     const prev = plansOf(c).filter(x => x.day < dayKey(s.date) && planHasContent(x)).sort((a, b) => b.day.localeCompare(a.day))[0];
     if (!prev) return;
@@ -3559,6 +3579,13 @@ function drawPlan(doc, c, iso){
     section('Your goals', planLines(p.goals), 'num');
     section('The plan', planLines(p.plan), planLines(p.plan).length > 1);
     section('Progressions', planLines(p.progressions), true);
+  }
+  const rv = reviewOf(c, iso);
+  if (rv){
+    need(20);
+    doc.setTextColor(...ink); doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Your next review', M, y); y += 3;
+    doc.setDrawColor(...tide); doc.setLineWidth(0.6); doc.line(M, y, M + 24, y); y += 7;
+    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.text(`${rv} - we'll re-test and update your plan.`, M, y); y += 12;
   }
   // app access
   const box = ['Your exercise program, with videos', 'Send your exercise physiologist any questions', 'Log your sessions and track your progress'];
