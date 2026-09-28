@@ -446,11 +446,18 @@ const BANDS = [
   {min:75, max:90,  label:'Great',             fill:'#83DFF5', ink:'#111111', rgb:[131,223,245]},
   {min:90, max:101, label:'Excellent',         fill:'#00728D', ink:'#FFFFFF', rgb:[0,114,141]}
 ];
-/* Bands for percentile scores (strength tests, chair stand): 25th–75th percentile is average */
+/* Tests compared with healthy people (strength tests, chair stand) are scored out of 100%, where 100% is the
+   very top of the healthy range and about 60% is average. The score comes from the percentile:
+   10th -> 25%, 25th -> 40%, 50th -> 60%, 75th -> 75%, 90th -> 90%, 99th -> 99%. */
+const SCORE_KNOTS = [[0,0],[10,25],[25,40],[50,60],[75,75],[90,90],[100,100]];
+const knotMap = (v, k) => { for (let i = 1; i < k.length; i++) if (v <= k[i][0]) return Math.round(k[i-1][1] + (v - k[i-1][0]) / (k[i][0] - k[i-1][0]) * (k[i][1] - k[i-1][1])); return k[k.length-1][1]; };
+const pctToScore = p => p == null ? null : knotMap(p, SCORE_KNOTS);
+const scoreToPct = v => v == null ? null : knotMap(v, SCORE_KNOTS.map(([a, b]) => [b, a]));
+/* Bands for those scores: 25th–75th percentile (40–75%) is average */
 const P_BANDS = [
-  {min:0,  max:10,  label:'Well below average', fill:'#C0664F', ink:'#FFFFFF', rgb:[192,102,79]},
-  {min:10, max:25,  label:'Below average',      fill:'#D5DCE0', ink:'#111111', rgb:[213,220,224]},
-  {min:25, max:75,  label:'Average',            fill:'#B2EBF9', ink:'#111111', rgb:[178,235,249]},
+  {min:0,  max:25,  label:'Well below average', fill:'#C0664F', ink:'#FFFFFF', rgb:[192,102,79]},
+  {min:25, max:40,  label:'Below average',      fill:'#D5DCE0', ink:'#111111', rgb:[213,220,224]},
+  {min:40, max:75,  label:'Average',            fill:'#B2EBF9', ink:'#111111', rgb:[178,235,249]},
   {min:75, max:90,  label:'Above average',      fill:'#83DFF5', ink:'#111111', rgb:[131,223,245]},
   {min:90, max:101, label:'Well above average', fill:'#00728D', ink:'#FFFFFF', rgb:[0,114,141]}
 ];
@@ -1409,12 +1416,12 @@ const TESTS = [
     make: () => chairStandController(),
     describe: r => r.unable ? 'Unable to complete' : `${r.reps} stand${r.reps === 1 ? '' : 's'} in ${r.completed ? '30 seconds' : `${r.time} s (stopped early)`}`,
     score(r, c){ if (r.unable) return 0; const cat = chairCategory(r.reps, c); return cat === 'above average' ? 3 : cat === 'average' ? 2 : 1; },
-    pct(r, c){ if (r.unable) return 0; if (!r.completed && !r.reps) return 0; return Math.min(99, Math.max(1, Math.round(normCdf((r.reps - chairStats(c).m) / chairStats(c).sd) * 100))); },
+    pct(r, c){ if (r.unable) return 0; if (!r.completed && !r.reps) return 0; return pctToScore(Math.min(99, Math.max(1, Math.round(normCdf((r.reps - chairStats(c).m) / chairStats(c).sd) * 100)))); },
     summary(r, c, opts = {}){
       const flags = [], g = chairRange(c);
       const lines = [this.describe(r)];
       if (!r.unable){
-        lines.push(`${opts.client ? `${pctOfAvg(this, r, c)}% of the average for age` : pctText(this.pct(r, c))} – ${chairCategory(r.reps, c)} (average range for age${c.sex ? ' and gender' : ''}: ${g[0]}–${g[1]} stands)`);
+        lines.push(`${opts.client ? chairCategory(r.reps, c).replace(/^./, x => x.toUpperCase()) : `${pctText(scoreToPct(this.pct(r, c)))} – ${chairCategory(r.reps, c)}`} (average range for age${c.sex ? ' and gender' : ''}: ${g[0]}–${g[1]} stands)`);
         if ((c.age ?? 60) < 60) flags.push({t:'Norms start at 60 years – compared with 60–64 year olds, so younger clients should score well above average'});
         if (!c.sex) flags.push({t:'Add the client’s gender for accurate norms'});
         if (chairCategory(r.reps, c) === 'below average') flags.push(opts.client ? {t:'Below the average range for age – a good focus for your program'} : {t:'Below average for age – linked with reduced lower-body strength and higher falls risk', bad:true});
@@ -1673,14 +1680,13 @@ function overall(session, c){
     // tests on a provisional average are left out of the overall when there are others to use
     if (pt.some(t => !t.prov)) pt = pt.filter(t => !t.prov);
     if (pt.length){
-      const ofAvg = avg(pt.map(t => pctOfAvg(t, session.results[t.id], c)));
-      return {pct: avg(pt.map(t => finalPct(t, session.results[t.id], c))), n: pt.length, scale:'pctile', ofAvg};
+      return {pct: avg(pt.map(t => finalPct(t, session.results[t.id], c))), n: pt.length, scale:'pctile'};
     }
   }
   // a percentile score (e.g. chair stand) is put on the same footing as the other % scores:
   // the average band (25th–75th percentile) maps to 40–75%
   const onPct = p => { const k = [[0,0],[10,25],[25,40],[50,60],[75,75],[90,90],[100,100]]; for (let i = 1; i < k.length; i++) if (p <= k[i][0]) return Math.round(k[i-1][1] + (p - k[i-1][0]) / (k[i][0] - k[i-1][0]) * (k[i][1] - k[i-1][1])); return p; };
-  const vals = ts.map(t => { const v = finalPct(t, session.results[t.id], c); return testScale(t, session.results[t.id], c) === 'pctile' && session.results[t.id].overridePct == null ? onPct(v) : v; });
+  const vals = ts.map(t => finalPct(t, session.results[t.id], c));
   return vals.length ? {pct: avg(vals), n: vals.length, scale:'pct'} : null;
 }
 /* Change in a test since the last screen that included it */
@@ -1838,8 +1844,8 @@ const provPct = (t, p) => p != null && t.prov ? Math.max(PROV_FLOOR, p) : p;
 function strengthPct(t, r, c){
   if (r.unable) return 0;
   const b = sidesBest(t, r), w = bwOf(r, c);
-  if (t.sides === 'one') return b.one != null ? provPct(t, pctile(b.one, normStats(t, c, w))) : null;
-  const v = ['L','R'].filter(k => b[k] != null).map(k => provPct(t, pctile(b[k], normStats(t, c, w, k)))).filter(x => x != null);
+  if (t.sides === 'one') return b.one != null ? pctToScore(provPct(t, pctile(b.one, normStats(t, c, w)))) : null;
+  const v = ['L','R'].filter(k => b[k] != null).map(k => pctToScore(provPct(t, pctile(b[k], normStats(t, c, w, k))))).filter(x => x != null);
   return v.length ? avg(v) : symmetry(b.L, b.R);
 }
 const tgtText = t => t.bw >= 1 ? `${t.bw} × body weight` : `${Math.round(t.bw * 100)}% of body weight`;
@@ -1850,10 +1856,9 @@ function strengthSummary(t, r, c, opts = {}){
   const vsAvg = (v, side) => { const st = normStats(t, c, w, side), p = pctile(v, st);
     const cat = t.norm === 'grip' ? gripCategory(v, c) : null;
     if (p == null) return pctBW(v);
-    if (t.prov) return opts.client ? '' : ` – ${pctText(p)}, ${Math.round(v / st.m * 100)}% of the provisional average${pctBW(v)}`;
-    // client reports lead with % of average; percentiles stay in the clinical notes
-    return opts.client ? ` – ${Math.round(v / st.m * 100)}% of the average for age${c.sex ? ' and gender' : ''}${cat ? ` (${cat} range)` : ''}`
-      : ` – ${pctText(p)}, ${Math.round(v / st.m * 100)}% of the average${cat ? ` (${cat} range)` : ''}${pctBW(v)}`; };
+    if (t.prov) return opts.client ? '' : ` – ${pctText(p)} against the provisional average${pctBW(v)}`;
+    // percentiles stay in the clinical notes
+    return opts.client ? (cat ? ` (${cat} range)` : '') : ` – ${pctText(p)}${cat ? ` (${cat} range)` : ''}${pctBW(v)}`; };
   if (t.sides === 'one'){
     const n = r.attempts?.length || 0;
     if (b.one != null) lines.push(`Best ${b.one.toFixed(1)} kg from ${n} attempt${n === 1 ? '' : 's'}${w ? `, ${(b.one / w).toFixed(2)} × body weight` : ''}${normStats(t, c, w) ? vsAvg(b.one) : ''}`);
@@ -3157,20 +3162,20 @@ async function keepAwake(on){
 
 /* ---------- Bands chart (HTML) ---------- */
 function bandChartHTML(pct, prevPct, scale){
-  const pos = v => clamp(v, 2, 98), P = scale === 'pctile', show = v => P ? pctText(v) : `${v}%`;
+  const pos = v => clamp(v, 2, 98), show = v => `${v}%`;
   const bs = bandSet(scale);
   return `<div class="band-chart" role="img" aria-label="Overall ${show(pct)}, ${esc(bandFor(pct, scale).label)}${prevPct != null ? `. Previous ${show(prevPct)}` : ''}">
-    <div class="band-marker" style="left:${pos(pct)}%"><span>${P ? esc(pctShort(pct)) : pct + '%'}</span></div>
+    <div class="band-marker" style="left:${pos(pct)}%"><span>${pct}%</span></div>
     <div class="band-track" style="grid-template-columns:${bs.map(b => (Math.min(b.max, 100) - b.min) + 'fr').join(' ')}">${bs.map(b => `<i style="background:${b.fill}"></i>`).join('')}${prevPct != null ? `<b class="band-prev" style="left:${pos(prevPct)}%"></b>` : ''}</div>
     <div class="band-labels" style="grid-template-columns:${bs.map(b => (Math.min(b.max, 100) - b.min) + 'fr').join(' ')}">${bs.map(b => `<span>${esc(b.label)}</span>`).join('')}</div>
     ${prevPct != null ? `<p class="band-legend"><b class="band-prev-key"></b>Previous screen ${show(prevPct)}</p>` : ''}
   </div>`;
 }
 const BAND_GRADIENT = 'linear-gradient(90deg,#B23A2A 0%,#B23A2A 30%,#E0A443 45%,#E0A443 55%,#B2EBF9 66%,#83DFF5 80%,#00728D 94%,#00728D 100%)';
-const P_GRADIENT = 'linear-gradient(90deg,#C0664F 0%,#C0664F 7%,#D5DCE0 13%,#D5DCE0 22%,#B2EBF9 30%,#B2EBF9 70%,#83DFF5 80%,#83DFF5 87%,#00728D 94%,#00728D 100%)';
+const P_GRADIENT = 'linear-gradient(90deg,#C0664F 0%,#C0664F 20%,#D5DCE0 28%,#D5DCE0 36%,#B2EBF9 44%,#B2EBF9 71%,#83DFF5 79%,#83DFF5 86%,#00728D 94%,#00728D 100%)';
 function miniBarHTML(pct, label, scale){
   const b = {...bandFor(pct, scale)}; if (label) b.label = label; const x = clamp(pct, 1.5, 98.5);
-  return `<div class="mbar" role="img" aria-label="${scale === 'pctile' ? pctText(pct) : pct + '%'}, ${esc(b.label)}">
+  return `<div class="mbar" role="img" aria-label="${pct}%, ${esc(b.label)}">
     <div class="mbar-track" style="background:${scale === 'pctile' ? P_GRADIENT : BAND_GRADIENT}"></div>
     <i class="mbar-mark" style="left:${x}%"></i>
     <span class="mbar-label" style="left:${clamp(pct, 10, 90)}%">${esc(b.label)}</span>
@@ -3202,7 +3207,7 @@ function loadJsPDF(){
 }
 const hex = s => [1,3,5].map(i => parseInt(s.slice(i, i + 2), 16));
 const GRAD_STOPS = [[0,'#B23A2A'],[30,'#B23A2A'],[45,'#E0A443'],[55,'#E0A443'],[66,'#B2EBF9'],[80,'#83DFF5'],[94,'#00728D'],[100,'#00728D']].map(([p, c]) => [p, hex(c)]);
-const P_GRAD_STOPS = [[0,'#C0664F'],[7,'#C0664F'],[13,'#D5DCE0'],[22,'#D5DCE0'],[30,'#B2EBF9'],[70,'#B2EBF9'],[80,'#83DFF5'],[87,'#83DFF5'],[94,'#00728D'],[100,'#00728D']].map(([p, c]) => [p, hex(c)]);
+const P_GRAD_STOPS = [[0,'#C0664F'],[20,'#C0664F'],[28,'#D5DCE0'],[36,'#D5DCE0'],[44,'#B2EBF9'],[71,'#B2EBF9'],[79,'#83DFF5'],[86,'#83DFF5'],[94,'#00728D'],[100,'#00728D']].map(([p, c]) => [p, hex(c)]);
 function gradColor(p, scale){
   const G = scale === 'pctile' ? P_GRAD_STOPS : GRAD_STOPS;
   for (let i = 1; i < G.length; i++){
@@ -3277,7 +3282,7 @@ function drawSession(doc, c, s, keys){
   y += 15;
   doc.setFillColor(...tint); doc.roundedRect(M, y, CW, 60, 3, 3, 'F');
   if (o){
-    const P = o.scale === 'pctile' && o.ofAvg != null, b = bandFor(o.pct, o.scale);
+    const P = false, b = bandFor(o.pct, o.scale);
     doc.setTextColor(...ink); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text(P ? 'Overall strength, % of average' : `Overall ${stype(s)} score`, M + 8, y + 9);
     doc.setTextColor(...tide); doc.setFontSize(34); doc.text(`${P ? o.ofAvg : o.pct}%`, M + 8, y + 24);
     doc.setFontSize(10.5); const lw = doc.getTextWidth(b.label) + 8;
@@ -3285,10 +3290,10 @@ function drawSession(doc, c, s, keys){
     doc.setTextColor(...(b.ink === '#FFFFFF' ? [255,255,255] : ink)); doc.text(b.label, M + 56, y + 21);
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...grey);
     doc.text(`From ${o.n} of ${plannedTests(s).length} ${itemNoun(s, plannedTests(s).length)}`, M + 8, y + 31);
-    if (P) doc.text('100% = the average for healthy people of the same age and gender', M + 8, y + 35.5);
-    if (po){ if (P && po.ofAvg != null){ const d = o.ofAvg - po.ofAvg; doc.text(`Previous screen ${po.ofAvg}% (${d >= 0 ? '+' : ''}${d} points)`, M + 52, y + 31); }
+    if (o.scale === 'pctile') doc.text('About 60% is average for age and gender. 100% is the top of the healthy range.', M + 8, y + 35.5);
+    if (po){ if (P){ }
              else if (!P){ const d = o.pct - po.pct; doc.text(`Previous screen ${po.pct}% (${d >= 0 ? '+' : ''}${d} points)`, M + 52, y + 31); } }
-    const oh = historyFor(c, s, x => { const ox = overall(x, c); return P ? (ox?.ofAvg != null ? Math.min(100, ox.ofAvg) : null) : (ox?.pct ?? null); });
+    const oh = historyFor(c, s, x => overall(x, c)?.pct ?? null);
     doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...grey); doc.text('Trend', W - M - 50, y + 8);
     spark(W - M - 50, y + 11, 42, 18, oh);
     // Band bar
@@ -3339,9 +3344,7 @@ function drawSession(doc, c, s, keys){
       doc.setFillColor(...ink); doc.rect(mx - 0.5, by - 1.2, 1, 6.9, 'F');
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...grey);
       doc.text(((r.overridePct == null && t.kind === 'health' && t.assess(r, c)?.label) || bandFor(v, sc).label) + (symScore(t, r, c) ? ' (left/right symmetry)' : ''), clamp(mx, barX + 12, barX + barW - 12), by + 9.3, {align:'center'});
-      const oa = sc === 'pctile' ? pctOfAvg(t, r, c) : null, pk = sc === 'pctile' && t.prov ? strengthTrendKg(t, r) : null;
-      circle(circX, top + 5, v, 6.3, sc, oa != null ? oa : pk != null ? (pk < 100 ? pk.toFixed(1) : Math.round(pk)) : null);
-      if (oa != null || pk != null){ doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...grey); doc.text(oa != null ? '% of avg' : 'kg', circX, top + 13.8, {align:'center'}); }
+      circle(circX, top + 5, v, 6.3, sc);
       if (t.kind === 'strength'){
         const hk = historyFor(c, s, x => x.results[t.id] ? strengthTrendKg(t, x.results[t.id]) : null), mk = Math.max(1, ...hk.map(p => p.v)) * 1.15;
         spark(sparkX, top - 2.5, sparkW, 13, hk.map(p => ({...p, v: Math.round(p.v / mk * 100)})));
@@ -3390,11 +3393,11 @@ function drawSession(doc, c, s, keys){
 /* ---------- "How the scores work" key ---------- */
 const KEY_TEXT = {
     movement: 'Each movement is scored as a percentage: 100% means it met the target for the client\'s age or showed no movement faults, and the score drops the further it is from the target. The overall score is the average of the movements tested.',
-    strength: 'Each result is compared with the average for healthy people of the same age and gender, shown as a % of that average (100% = average). The overall score is the average of those tests; tests scored only on left/right symmetry, or against a provisional average, are not included in it. Strength is best tracked against your own previous results.',
+    strength: 'Each result is compared with healthy people of the same age and gender and scored out of 100%: about 60% is average and 100% is the very top of the healthy range. The overall score is the average of those tests; tests scored only on left/right symmetry, or against a provisional average, are not included in it. Strength is best tracked against your own previous results.',
     endurance: 'Each 30-second hold is scored as the force kept: the average force over 30 seconds as a percentage of the peak. Force drop compares the first and last 5 seconds, and total is the force added up over the hold (kg-seconds), which rises with both strength and endurance. Results are best used to track change and compare sides. Trunk endurance is scored on the share of ratio guidelines met: flexors shorter than extensors, each side bridge under 0.75 of the extensor time, and left and right side bridges within 5% of each other.',
     health: 'Each measure is rated against a healthy range and converted to a percentage (100% = in the healthy range). Height and skeletal muscle mass are recorded for tracking and are not scored.'
   };
-const KEY_BANDS = type => type === 'strength' ? 'Circles show each result as a % of the average for healthy people of the same age and gender (100% = average). Tests with a provisional average show the result in kg and are best used to track progress. Bands: well below average (lowest 10%), below average (10-25%), average (middle half), above average (75-90%), well above average (top 10%). Tests scored on left/right symmetry use: under 40% needs improvement, 40-59% average range, 60-74% good, 75-89% great, 90% and over excellent.' : 'Bands: under 40% needs improvement, 40-59% average range, 60-74% good, 75-89% great, 90% and over excellent.';
+const KEY_BANDS = type => type === 'strength' ? 'Bands: well below average (under 25%), below average (25-39%), average (40-74%), above average (75-89%), well above average (90% and over). Tests scored on left/right symmetry use: under 40% needs improvement, 40-59% average range, 60-74% good, 75-89% great, 90% and over excellent.' : 'Bands: under 40% needs improvement, 40-59% average range, 60-74% good, 75-89% great, 90% and over excellent.';
 function keyLines(doc, types){
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
   return [...new Set(types)].map(type => ({type, lines: doc.splitTextToSize(KEY_TEXT[type] + ' ' + KEY_BANDS(type), 178)}));
@@ -3427,9 +3430,9 @@ function notesText(c, s){
   out.push('');
   if (o){
     const P = o.scale === 'pctile';
-    out.push(`Overall: ${P ? `${pctText(o.pct)}, ${o.ofAvg}% of reference average` : o.pct + '%'} (${bandFor(o.pct, o.scale).label})`);
+    out.push(`Overall: ${o.pct}% (${bandFor(o.pct, o.scale).label}${P ? `, about the ${ordinal(scoreToPct(o.pct))} percentile` : ''})`);
     out.push(`Tested: ${o.n} of ${planned.length} ${itemNoun(s, planned.length)}${P && o.n < planned.filter(t => s.results[t.id]).length ? ' (symmetry-only and provisional-average tests not included in the overall)' : ''}`);
-    if (po){ const d = o.pct - po.pct; out.push(`Previous screen (${fmtDate(prev.date)}): ${po.scale === 'pctile' ? pctText(po.pct) : po.pct + '%'}, ${d >= 0 ? '+' : ''}${d} points`); }
+    if (po){ const d = o.pct - po.pct; out.push(`Previous screen (${fmtDate(prev.date)}): ${po.pct}%, ${d >= 0 ? '+' : ''}${d} points`); }
   } else if (!Object.keys(s.results).length) out.push(`No ${itemNoun(s, 2)} recorded.`);
   const notDone = [];
   for (const g of groupsFor(s)){
@@ -3441,7 +3444,7 @@ function notesText(c, s){
     for (const t of done){
       const r = s.results[t.id], v = finalPct(t, r, c);
       const {lines, flags} = summaryOf(t, r, c), sc = testScale(t, r, c), ch = changeLine(t, c, s);
-      out.push('', v != null ? `${t.name}: ${sc === 'pctile' ? pctText(v) : v + '%'} (${bandFor(v, sc).label})${symScore(t, r, c) ? ' symmetry' : ''}` : t.name);
+      out.push('', v != null ? `${t.name}: ${v}% (${bandFor(v, sc).label}${sc === 'pctile' ? `, ${pctText(scoreToPct(v))}` : ''})${symScore(t, r, c) ? ' symmetry' : ''}` : t.name);
       if (ch) out.push(`   ${ch}`);
       if (r.overridePct != null) out.push(`   Adjusted by practitioner (automatic score ${pctOf(t, r, c)}%)`);
       lines.forEach(l => out.push(`   ${l}`));
@@ -3533,12 +3536,12 @@ function buildDayReport(jsPDF, c, sessions){
     doc.setFillColor(...tint); doc.roundedRect(M, y, CW, 30, 3, 3, 'F');
     doc.setTextColor(...ink); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text(screenNoun(s), M + 8, y + 10);
     doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...grey);
-    const pv = o && po ? (o.scale === 'pctile' ? (po.ofAvg != null && o.ofAvg != null ? [po.ofAvg, o.ofAvg - po.ofAvg] : null) : [po.pct, o.pct - po.pct]) : null;
+    const pv = o && po ? [po.pct, o.pct - po.pct] : null;
     doc.text(o ? `From ${o.n} of ${n} ${itemNoun(s, n)}${pv ? `; previous screen ${pv[0]}% (${pv[1] >= 0 ? '+' : ''}${pv[1]} points)` : ''}` : 'No percentage scores', M + 8, y + 17);
     doc.text(prev ? 'Full results on the following pages' : 'First screen - your starting point. Full results on the following pages', M + 8, y + 23);
     if (o){
-      const P = o.scale === 'pctile' && o.ofAvg != null, b = bandFor(o.pct, o.scale);
-      doc.setTextColor(...tide); doc.setFont('helvetica','bold'); doc.setFontSize(26); doc.text(`${P ? o.ofAvg : o.pct}%`, W - M - 50, y + 17, {align:'right'});
+      const P = false, b = bandFor(o.pct, o.scale);
+      doc.setTextColor(...tide); doc.setFont('helvetica','bold'); doc.setFontSize(26); doc.text(`${o.pct}%`, W - M - 50, y + 17, {align:'right'});
       if (P){ doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...grey); doc.text('of average', W - M - 50, y + 22, {align:'right'}); doc.setFont('helvetica','bold'); }
       doc.setFontSize(10); const lw = doc.getTextWidth(b.label) + 8;
       doc.setFillColor(...b.rgb); doc.roundedRect(W - M - 44, y + 10.5, lw, 8, 2, 2, 'F');
@@ -3694,7 +3697,7 @@ function lastSummary(c){
   const s = done[done.length - 1];
   if (!s) return c.sessions.length ? 'Screen in progress' : 'No screens yet';
   const o = overall(s, c);
-  return `Last screen ${fmtDate(s.date)}${o ? `, ${o.scale === 'pctile' ? pctText(o.pct) : o.pct + '%'} (${bandFor(o.pct, o.scale).label.toLowerCase()})` : ''}`;
+  return `Last screen ${fmtDate(s.date)}${o ? `, ${o.pct}% (${bandFor(o.pct, o.scale).label.toLowerCase()})` : ''}`;
 }
 /* ---------- Visual building blocks ---------- */
 const RING_COL = ['#B23A2A', '#D9962B', '#6FD3EE', '#2FB3D6', '#00728D'];
@@ -3703,12 +3706,12 @@ const bandColor = (pct, scale) => (scale === 'pctile' ? P_RING_COL : RING_COL)[b
 function ringHTML(pct, size = 64, stroke = 7, scale){
   const r = (size - stroke) / 2, C = +(2 * Math.PI * r).toFixed(2), mid = size / 2;
   const off = pct == null ? C : +(C * (1 - clamp(pct, 0, 100) / 100)).toFixed(2);
-  return `<span class="ring" style="width:${size}px;height:${size}px" role="img" aria-label="${pct == null ? 'Not tested' : scale === 'pctile' ? pctText(pct) : pct + '%'}">
+  return `<span class="ring" style="width:${size}px;height:${size}px" role="img" aria-label="${pct == null ? 'Not tested' : pct + '%'}">
     <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
       <circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="var(--ring-track)" stroke-width="${stroke}"/>
       ${pct == null ? '' : `<circle class="arc" style="--c:${C}" cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="${bandColor(pct, scale)}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}" transform="rotate(-90 ${mid} ${mid})"/>`}
     </svg>
-    <span class="ring-num" style="font-size:${Math.round(size * 0.29)}px">${pct == null ? '–' : scale === 'pctile' ? (pct < 5 ? '&lt;5<small>th</small>' : `${pct}<small>${ordinal(pct).slice(String(pct).length)}</small>`) : `${pct}<small>%</small>`}</span>
+    <span class="ring-num" style="font-size:${Math.round(size * 0.29)}px">${pct == null ? '–' : `${pct}<small>%</small>`}</span>
   </span>`;
 }
 const initials = name => name.trim().split(/\s+/).map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
@@ -3938,7 +3941,7 @@ function renderSession(cid, sid){
       <div class="s-main">
         <p class="eyebrow">${esc(c.name)}, age ${c.age}${c.sex ? `, ${c.sex}` : ''}${s.from ? `, from the ${esc(s.from)} template` : ''}</p>
         <h1>${screenNoun(s)}, ${fmtDate(s.date)}</h1>
-        <p class="s-sum">${o ? `${bandChip(o.pct, o.scale)}${o.scale === 'pctile' && o.ofAvg != null ? ` <span>${o.ofAvg}% of the reference average,</span>` : ''} <span>from ${o.n} of ${planned.length} ${itemNoun(s, planned.length)}${diff != null ? `, ${diff >= 0 ? 'up' : 'down'} ${Math.abs(diff)} points on ${fmtDate(prev.date)}` : ''}</span>` : `<span>${planned.length} ${itemNoun(s, planned.length)} chosen – ${isH ? 'enter a measure' : 'run one'} to see a score</span>`}</p>
+        <p class="s-sum">${o ? `${bandChip(o.pct, o.scale)} <span>from ${o.n} of ${planned.length} ${itemNoun(s, planned.length)}${diff != null ? `, ${diff >= 0 ? 'up' : 'down'} ${Math.abs(diff)} points on ${fmtDate(prev.date)}` : ''}</span>` : `<span>${planned.length} ${itemNoun(s, planned.length)} chosen – ${isH ? 'enter a measure' : 'run one'} to see a score</span>`}</p>
         ${o ? bandChartHTML(o.pct, po && po.scale === o.scale ? po.pct : null, o.scale) : ''}
         ${isS ? `<label class="bw">Body weight today <input id="bw" type="number" step="0.1" inputmode="decimal" value="${s.weight ?? c.weight ?? ''}"> kg</label>` : ''}
       </div>
